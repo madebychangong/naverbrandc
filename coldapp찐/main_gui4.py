@@ -410,7 +410,30 @@ class MainWindow(QMainWindow):
         naver_select_group, naver_select_lay = self.build_group("✅ 네이버 포스팅 활성화")
         self.use_naver_checkbox = QCheckBox("네이버 블로그 포스팅 사용")
         self.use_naver_checkbox.setChecked(self.config.get('use_naver', True))
-        self.use_naver_checkbox.setStyleSheet(f"color:{Colors.TEXT}; font-size:14px; font-weight:600;")
+        self.use_naver_checkbox.setStyleSheet(f"""
+            QCheckBox {{
+                color: {Colors.TEXT};
+                font-size: 14px;
+                font-weight: 600;
+                spacing: 10px;
+            }}
+            QCheckBox::indicator {{
+                width: 24px;
+                height: 24px;
+                border: 2px solid #D1D5DB;
+                border-radius: 6px;
+                background: white;
+            }}
+            QCheckBox::indicator:hover {{
+                border: 2px solid {Colors.PRIMARY};
+                background: #EEF2FF;
+            }}
+            QCheckBox::indicator:checked {{
+                background: {Colors.PRIMARY};
+                border: 2px solid {Colors.PRIMARY};
+                image: url(data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMTYiIGhlaWdodD0iMTYiIHZpZXdCb3g9IjAgMCAxNiAxNiIgZmlsbD0ibm9uZSIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj4KPHBhdGggZD0iTTMgOEw2LjUgMTEuNUwxMyA0LjUiIHN0cm9rZT0id2hpdGUiIHN0cm9rZS13aWR0aD0iMiIgc3Ryb2tlLWxpbmVjYXA9InJvdW5kIiBzdHJva2UtbGluZWpvaW49InJvdW5kIi8+Cjwvc3ZnPgo=);
+            }}
+        """)
         naver_select_lay.addWidget(self.use_naver_checkbox)
         layout.addWidget(naver_select_group)
 
@@ -464,7 +487,30 @@ class MainWindow(QMainWindow):
         tistory_select_group, tistory_select_lay = self.build_group("✅ 티스토리 포스팅 활성화")
         self.use_tistory_checkbox = QCheckBox("티스토리 포스팅 사용")
         self.use_tistory_checkbox.setChecked(self.config.get('use_tistory', False))
-        self.use_tistory_checkbox.setStyleSheet(f"color:{Colors.TEXT}; font-size:14px; font-weight:600;")
+        self.use_tistory_checkbox.setStyleSheet(f"""
+            QCheckBox {{
+                color: {Colors.TEXT};
+                font-size: 14px;
+                font-weight: 600;
+                spacing: 10px;
+            }}
+            QCheckBox::indicator {{
+                width: 24px;
+                height: 24px;
+                border: 2px solid #D1D5DB;
+                border-radius: 6px;
+                background: white;
+            }}
+            QCheckBox::indicator:hover {{
+                border: 2px solid {Colors.PRIMARY};
+                background: #EEF2FF;
+            }}
+            QCheckBox::indicator:checked {{
+                background: {Colors.PRIMARY};
+                border: 2px solid {Colors.PRIMARY};
+                image: url(data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMTYiIGhlaWdodD0iMTYiIHZpZXdCb3g9IjAgMCAxNiAxNiIgZmlsbD0ibm9uZSIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj4KPHBhdGggZD0iTTMgOEw2LjUgMTEuNUwxMyA0LjUiIHN0cm9rZT0id2hpdGUiIHN0cm9rZS13aWR0aD0iMiIgc3Ryb2tlLWxpbmVjYXA9InJvdW5kIiBzdHJva2UtbGluZWpvaW49InJvdW5kIi8+Cjwvc3ZnPgo=);
+            }}
+        """)
         tistory_select_lay.addWidget(self.use_tistory_checkbox)
         layout.addWidget(tistory_select_group)
 
