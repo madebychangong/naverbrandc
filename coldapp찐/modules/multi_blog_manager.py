@@ -84,26 +84,46 @@ class MultiBlogManager:
         else:
             print("\n[1/2] 네이버 블로그 건너뜀 (설정 없음)")
 
-        # 티스토리 포스팅
+        # 티스토리 포스팅 (Selenium 방식)
         if tistory_writer:
             print("\n[2/2] 티스토리 포스팅 중...")
             try:
-                result = tistory_writer.write_post(
-                    title=title,
-                    ai_result=ai_result,
-                    image_files=image_files,
-                    shopping_url=shopping_url,
-                    visibility=3  # 발행
-                )
+                # Selenium 방식 티스토리 writer 확인
+                if hasattr(tistory_writer, 'is_logged_in'):
+                    # TistorySeleniumWriter 사용
+                    success = tistory_writer.write_post(
+                        title=title,
+                        ai_result=ai_result,
+                        image_files=image_files,
+                        shopping_url=shopping_url
+                    )
 
-                if result:
-                    results['tistory']['success'] = True
-                    results['tistory']['url'] = result['tistory']['url']
-                    print(f"   ✅ 티스토리 포스팅 성공!")
-                    print(f"   URL: {results['tistory']['url']}")
+                    if success:
+                        results['tistory']['success'] = True
+                        results['tistory']['url'] = f"https://{tistory_writer.blog_name}.tistory.com"
+                        print(f"   ✅ 티스토리 포스팅 성공!")
+                        print(f"   URL: {results['tistory']['url']}")
+                    else:
+                        results['tistory']['error'] = "포스팅 실패"
+                        print("   ❌ 티스토리 포스팅 실패")
                 else:
-                    results['tistory']['error'] = "포스팅 실패"
-                    print("   ❌ 티스토리 포스팅 실패")
+                    # 기존 API 방식 (더 이상 작동 안함)
+                    result = tistory_writer.write_post(
+                        title=title,
+                        ai_result=ai_result,
+                        image_files=image_files,
+                        shopping_url=shopping_url,
+                        visibility=3  # 발행
+                    )
+
+                    if result:
+                        results['tistory']['success'] = True
+                        results['tistory']['url'] = result['tistory']['url']
+                        print(f"   ✅ 티스토리 포스팅 성공!")
+                        print(f"   URL: {results['tistory']['url']}")
+                    else:
+                        results['tistory']['error'] = "포스팅 실패 (API 종료됨)"
+                        print("   ❌ 티스토리 포스팅 실패 (API 종료됨)")
 
             except Exception as e:
                 results['tistory']['error'] = str(e)

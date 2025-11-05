@@ -1,7 +1,15 @@
 """
-티스토리 블로그 작성 모듈
-- 티스토리 OpenAPI 사용
-- REST API로 깔끔하게 포스팅
+티스토리 블로그 작성 모듈 (레거시)
+
+⚠️ 경고: 티스토리 Open API는 2024년 2월에 종료되었습니다.
+이 모듈은 더 이상 작동하지 않습니다.
+
+대안: blog_writer_tistory_selenium.py (TistorySeleniumWriter) 사용
+
+---
+
+- 티스토리 OpenAPI 사용 (종료됨)
+- REST API로 깔끔하게 포스팅 (더 이상 불가)
 - 네이버 형식 → 티스토리 HTML 변환
 """
 
