@@ -590,10 +590,12 @@ class MainWindow(QMainWindow):
         divider.setStyleSheet(f"color:{Colors.DIVIDER};")
         side_layout.addWidget(divider)
 
-        self.btn_automation = NavButton("자동 포스팅", True)
-        self.btn_settings = NavButton("설정")
+        self.btn_automation = NavButton("📝 자동 포스팅", True)
+        self.btn_naver_settings = NavButton("⚙️ 네이버 설정")
+        self.btn_tistory_settings = NavButton("📘 티스토리 설정")
         side_layout.addWidget(self.btn_automation)
-        side_layout.addWidget(self.btn_settings)
+        side_layout.addWidget(self.btn_naver_settings)
+        side_layout.addWidget(self.btn_tistory_settings)
         side_layout.addItem(QSpacerItem(20, 20, QSizePolicy.Policy.Minimum, QSizePolicy.Policy.Expanding))
 
         # 사용자 정보 카드 (왼쪽 아래)
@@ -676,9 +678,11 @@ class MainWindow(QMainWindow):
         # 스택
         self.stack = QStackedWidget()
         self.page_automation = self.build_automation_page()
-        self.page_settings = self.build_settings_page()
+        self.page_naver_settings = self.build_naver_settings_page()
+        self.page_tistory_settings = self.build_tistory_settings_page()
         self.stack.addWidget(self.page_automation)
-        self.stack.addWidget(self.page_settings)
+        self.stack.addWidget(self.page_naver_settings)
+        self.stack.addWidget(self.page_tistory_settings)
         content_layout.addWidget(self.stack)
 
         # 레이아웃 조합
@@ -687,7 +691,8 @@ class MainWindow(QMainWindow):
 
         # 이벤트 연결
         self.btn_automation.clicked.connect(lambda: self.switch_page(0))
-        self.btn_settings.clicked.connect(lambda: self.switch_page(1))
+        self.btn_naver_settings.clicked.connect(lambda: self.switch_page(1))
+        self.btn_tistory_settings.clicked.connect(lambda: self.switch_page(2))
         self.start_btn.clicked.connect(self.start_automation)
         self.stop_btn.clicked.connect(self.stop_automation)
 
@@ -727,7 +732,7 @@ class MainWindow(QMainWindow):
         layout.addWidget(log_group, 1)
         return page
 
-    def build_settings_page(self) -> QWidget:
+    def build_naver_settings_page(self) -> QWidget:
         page = QWidget(); layout = QVBoxLayout(page)
         layout.setContentsMargins(0, 0, 0, 0); layout.setSpacing(12)
 
@@ -772,13 +777,41 @@ class MainWindow(QMainWindow):
         api_lay.addWidget(self.gemini_key_input)
         layout.addWidget(api_group)
 
-        # 티스토리 설정
-        tistory_group, tistory_lay = self.build_group("📘 티스토리 (선택)")
-        tistory_hint = QLabel("티스토리에도 동시 포스팅하려면 아래 정보를 입력하세요.")
-        tistory_hint.setStyleSheet(f"color:{Colors.TEXT_WEAK}; font-size:12px;")
-        tistory_lay.addWidget(tistory_hint)
+        # 네이버 포스팅 활성화
+        naver_select_group, naver_select_lay = self.build_group("✅ 네이버 포스팅 활성화")
+        self.use_naver_checkbox = QCheckBox("네이버 블로그 포스팅 사용")
+        self.use_naver_checkbox.setChecked(self.config.get('use_naver', True))
+        self.use_naver_checkbox.setStyleSheet(f"color:{Colors.TEXT}; font-size:14px; font-weight:600;")
+        naver_select_lay.addWidget(self.use_naver_checkbox)
+        layout.addWidget(naver_select_group)
 
-        # 티스토리 블로그 이름
+        save_bar = QWidget(); save_bar.setStyleSheet(f"background:{Colors.SURFACE}; border:none; border-radius:12px;")
+        hb = QHBoxLayout(save_bar); hb.setContentsMargins(12,10,12,10)
+        hb.addStretch(); save_btn = SolidButton("설정 저장", color=Colors.SUCCESS); hb.addWidget(save_btn)
+        layout.addWidget(save_bar)
+        save_btn.clicked.connect(self.save_settings)
+        return page
+
+    def build_tistory_settings_page(self) -> QWidget:
+        page = QWidget(); layout = QVBoxLayout(page)
+        layout.setContentsMargins(0, 0, 0, 0); layout.setSpacing(12)
+
+        # 티스토리 설정 안내
+        info_group, info_lay = self.build_group("📘 티스토리 OpenAPI 설정")
+        info_text = QLabel(
+            "티스토리에도 동시 포스팅하려면 아래 정보를 입력하세요.\n"
+            "토큰 발급 방법: python get_tistory_token.py 실행\n"
+            "자세한 가이드는 TISTORY_GUIDE.md 참고"
+        )
+        info_text.setStyleSheet(f"color:{Colors.TEXT_WEAK}; font-size:12px; line-height:1.6;")
+        info_text.setWordWrap(True)
+        info_lay.addWidget(info_text)
+        layout.addWidget(info_group)
+
+        # 티스토리 블로그 설정
+        tistory_group, tistory_lay = self.build_group("🌐 티스토리 블로그")
+
+        # 블로그 이름
         tistory_blog_label = QLabel("블로그 이름 (예: myblog.tistory.com → myblog)")
         tistory_blog_label.setStyleSheet(f"color:{Colors.TEXT_WEAK}; font-size:12px; font-weight:700;")
         tistory_lay.addWidget(tistory_blog_label)
@@ -787,7 +820,7 @@ class MainWindow(QMainWindow):
         self.tistory_blog_input.setText(self.config.get('tistory_blog_name',''))
         tistory_lay.addWidget(self.tistory_blog_input)
 
-        # 티스토리 액세스 토큰
+        # Access Token
         tistory_token_label = QLabel("Access Token (티스토리 OpenAPI에서 발급)")
         tistory_token_label.setStyleSheet(f"color:{Colors.TEXT_WEAK}; font-size:12px; font-weight:700;")
         tistory_lay.addWidget(tistory_token_label)
@@ -798,18 +831,13 @@ class MainWindow(QMainWindow):
         tistory_lay.addWidget(self.tistory_token_input)
         layout.addWidget(tistory_group)
 
-        # 블로그 선택
-        blog_select_group, blog_select_lay = self.build_group("✅ 포스팅할 블로그 선택")
-        self.use_naver_checkbox = QCheckBox("네이버 블로그")
-        self.use_naver_checkbox.setChecked(self.config.get('use_naver', True))
-        self.use_naver_checkbox.setStyleSheet(f"color:{Colors.TEXT}; font-size:14px; font-weight:600;")
-        blog_select_lay.addWidget(self.use_naver_checkbox)
-
-        self.use_tistory_checkbox = QCheckBox("티스토리")
+        # 티스토리 포스팅 활성화
+        tistory_select_group, tistory_select_lay = self.build_group("✅ 티스토리 포스팅 활성화")
+        self.use_tistory_checkbox = QCheckBox("티스토리 포스팅 사용")
         self.use_tistory_checkbox.setChecked(self.config.get('use_tistory', False))
         self.use_tistory_checkbox.setStyleSheet(f"color:{Colors.TEXT}; font-size:14px; font-weight:600;")
-        blog_select_lay.addWidget(self.use_tistory_checkbox)
-        layout.addWidget(blog_select_group)
+        tistory_select_lay.addWidget(self.use_tistory_checkbox)
+        layout.addWidget(tistory_select_group)
 
         save_bar = QWidget(); save_bar.setStyleSheet(f"background:{Colors.SURFACE}; border:none; border-radius:12px;")
         hb = QHBoxLayout(save_bar); hb.setContentsMargins(12,10,12,10)
@@ -821,7 +849,8 @@ class MainWindow(QMainWindow):
     def switch_page(self, index: int):
         self.stack.setCurrentIndex(index)
         self.btn_automation.setChecked(index == 0)
-        self.btn_settings.setChecked(index == 1)
+        self.btn_naver_settings.setChecked(index == 1)
+        self.btn_tistory_settings.setChecked(index == 2)
 
     def start_automation(self):
         url = self.url_input.text().strip()
