@@ -345,6 +345,8 @@ class ConfigManager:
             "naver_id": "",
             "naver_pw": "",
             "gemini_api_key": "",
+            "tistory_blog_id": "",
+            "tistory_token": "",
             "last_login_email": ""
         }
 
@@ -701,6 +703,32 @@ class MainWindow(QMainWindow):
         api_lay.addWidget(self.gemini_key_input)
         layout.addWidget(api_group)
 
+        # 티스토리 설정
+        tistory_group, tistory_lay = self.build_group("📝 티스토리 설정")
+        tistory_hint = QLabel("티스토리 블로그 정보를 입력하세요.")
+        tistory_hint.setStyleSheet(f"color:{Colors.TEXT_WEAK}; font-size:12px;")
+        tistory_lay.addWidget(tistory_hint)
+
+        # 티스토리 블로그 ID
+        tistory_blog_label = QLabel("티스토리 블로그 ID")
+        tistory_blog_label.setStyleSheet(f"color:{Colors.TEXT_WEAK}; font-size:12px; font-weight:700;")
+        tistory_lay.addWidget(tistory_blog_label)
+        self.tistory_blog_input = LineEdit("예: myblog")
+        self.tistory_blog_input.setToolTip("티스토리 블로그 주소 (myblog.tistory.com의 myblog 부분)")
+        self.tistory_blog_input.setText(self.config.get('tistory_blog_id',''))
+        tistory_lay.addWidget(self.tistory_blog_input)
+
+        # 티스토리 API 토큰
+        tistory_token_label = QLabel("티스토리 Access Token")
+        tistory_token_label.setStyleSheet(f"color:{Colors.TEXT_WEAK}; font-size:12px; font-weight:700;")
+        tistory_lay.addWidget(tistory_token_label)
+        self.tistory_token_input = LineEdit("티스토리 API Access Token")
+        self.tistory_token_input.setToolTip("티스토리 Open API에서 발급받은 Access Token")
+        self.tistory_token_input.setEchoMode(QLineEdit.EchoMode.Password)
+        self.tistory_token_input.setText(self.config.get('tistory_token',''))
+        tistory_lay.addWidget(self.tistory_token_input)
+        layout.addWidget(tistory_group)
+
         save_bar = QWidget(); save_bar.setStyleSheet(f"background:{Colors.SURFACE}; border:none; border-radius:12px;")
         hb = QHBoxLayout(save_bar); hb.setContentsMargins(12,10,12,10)
         hb.addStretch(); save_btn = SolidButton("설정 저장", color=Colors.SUCCESS); hb.addWidget(save_btn)
@@ -778,13 +806,15 @@ class MainWindow(QMainWindow):
     def save_settings(self):
         # 1. 기존 설정을 불러옵니다.
         current_config = ConfigManager.load()
-        
+
         # 2. UI의 값으로 설정을 업데이트합니다.
         current_config['blog_id'] = self.blog_id_input.text().strip()
         current_config['naver_id'] = self.naver_id_input.text().strip()
         current_config['naver_pw'] = self.naver_pw_input.text()
         current_config['gemini_api_key'] = self.gemini_key_input.text().strip()
-        
+        current_config['tistory_blog_id'] = self.tistory_blog_input.text().strip()
+        current_config['tistory_token'] = self.tistory_token_input.text().strip()
+
         # 3. 업데이트된 전체 설정을 저장합니다.
         ConfigManager.save(current_config)
         QMessageBox.information(self, "저장 완료", "설정이 저장되었습니다! ✅")
