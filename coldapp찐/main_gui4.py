@@ -11,7 +11,7 @@ import sys
 from PyQt6.QtWidgets import (
     QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
     QLabel, QLineEdit, QPushButton, QTextEdit, QMessageBox, QFrame,
-    QStackedWidget, QSizePolicy, QSpacerItem, QDialog
+    QStackedWidget, QSizePolicy, QSpacerItem, QDialog, QCheckBox
 )
 from PyQt6.QtCore import Qt, QThread, pyqtSignal
 from PyQt6.QtGui import QFont, QIcon, QPixmap
@@ -20,6 +20,8 @@ import os
 import webbrowser
 from naver_blog_automation import NaverBlogAutomation
 from firebase_auth import FirebaseAuthManager
+from modules.blog_writer_tistory import TistoryBlogWriter
+from modules.multi_blog_manager import MultiBlogManager
 
 
 class Colors:
@@ -46,51 +48,116 @@ class AutomationThread(QThread):
 
     def run(self):
         try:
-            self.progress.emit("🌐 브라우저 시작 중...")
-            self.bot = NaverBlogAutomation(
-                self.config['blog_id'],
-                self.config['naver_id'],
-                self.config['naver_pw'],
-                self.config['gemini_api_key']
-            )
-            self.bot.start_browser()
-            self.progress.emit("✅ 브라우저 시작 완료\n")
+            use_naver = self.config.get('use_naver', True)
+            use_tistory = self.config.get('use_tistory', False)
 
-            self.progress.emit("🔐 로그인 중...")
-            if not self.bot.login():
-                self.finished.emit(False, "로그인 실패")
+            if not use_naver and not use_tistory:
+                self.finished.emit(False, "포스팅할 블로그를 최소 1개 선택하세요")
                 return
-            self.progress.emit("✅ 로그인 완료\n")
 
-            self.progress.emit("📦 제품 정보 추출 중...")
-            product_info = self.bot.extract_product_info(self.shopping_url)
-            if not product_info:
-                self.finished.emit(False, "제품 정보 추출 실패")
-                return
-            self.progress.emit(f"✅ 제품명: {product_info['title'][:50]}...\n")
+            # 1. 브라우저 시작 (네이버 사용 시에만)
+            if use_naver:
+                self.progress.emit("🌐 브라우저 시작 중...")
+                self.bot = NaverBlogAutomation(
+                    self.config['blog_id'],
+                    self.config['naver_id'],
+                    self.config['naver_pw'],
+                    self.config['gemini_api_key']
+                )
+                self.bot.start_browser()
+                self.progress.emit("✅ 브라우저 시작 완료\n")
 
-            self.progress.emit("💾 이미지 다운로드 중...")
-            image_files = self.bot.download_images(product_info['images'])
-            if not image_files:
-                self.finished.emit(False, "이미지 다운로드 실패 - 최소 1개")
-                return
-            self.progress.emit(f"✅ {len(image_files)}개 이미지 다운로드 완료\n")
+                self.progress.emit("🔐 네이버 로그인 중...")
+                if not self.bot.login():
+                    self.finished.emit(False, "네이버 로그인 실패")
+                    return
+                self.progress.emit("✅ 네이버 로그인 완료\n")
 
-            self.progress.emit("🤖 AI 글 생성 중...")
-            ai_result = self.bot.generate_ai_content(product_info)
-            if not ai_result:
-                self.finished.emit(False, "AI 글 생성 실패")
-                return
-            self.progress.emit(f"✅ AI 글 생성 완료 ({len(ai_result['content'])}자)\n")
-            self.progress.emit(f"✅ 태그 {len(ai_result['tags'])}개 생성\n")
+                # 2. 제품 정보 추출 (네이버 브라우저 사용)
+                self.progress.emit("📦 제품 정보 추출 중...")
+                product_info = self.bot.extract_product_info(self.shopping_url)
+                if not product_info:
+                    self.finished.emit(False, "제품 정보 추출 실패")
+                    return
+                self.progress.emit(f"✅ 제품명: {product_info['title'][:50]}...\n")
 
-            self.progress.emit("📝 블로그 글 작성 및 발행 중...")
-            if self.bot.write_blog_post(product_info['title'], ai_result, image_files, self.shopping_url):
-                self.finished.emit(True, "블로그 글 발행 완료! 🎉")
+                # 3. 이미지 다운로드
+                self.progress.emit("💾 이미지 다운로드 중...")
+                image_files = self.bot.download_images(product_info['images'])
+                if not image_files:
+                    self.finished.emit(False, "이미지 다운로드 실패 - 최소 1개")
+                    return
+                self.progress.emit(f"✅ {len(image_files)}개 이미지 다운로드 완료\n")
+
+                # 4. AI 글 생성
+                self.progress.emit("🤖 AI 글 생성 중...")
+                ai_result = self.bot.generate_ai_content(product_info)
+                if not ai_result:
+                    self.finished.emit(False, "AI 글 생성 실패")
+                    return
+                self.progress.emit(f"✅ AI 글 생성 완료 ({len(ai_result['content'])}자)\n")
+                self.progress.emit(f"✅ 태그 {len(ai_result['tags'])}개 생성\n")
+
             else:
-                self.finished.emit(False, "블로그 글 작성 실패")
+                # 티스토리만 사용하는 경우 - 간단한 방식으로 정보 수집
+                self.finished.emit(False, "티스토리 단독 사용은 아직 지원하지 않습니다. 네이버를 함께 선택해주세요.")
+                return
+
+            # 5. 멀티 블로그 포스팅
+            self.progress.emit("\n" + "="*50)
+            self.progress.emit("🚀 멀티 블로그 포스팅 시작")
+            self.progress.emit("="*50 + "\n")
+
+            multi_manager = MultiBlogManager()
+
+            # 네이버 작성자 준비
+            naver_writer = None
+            if use_naver:
+                from modules.blog_writer import BlogWriter
+                naver_writer = BlogWriter(self.bot.driver)
+
+            # 티스토리 작성자 준비
+            tistory_writer = None
+            if use_tistory:
+                tistory_token = self.config.get('tistory_access_token', '').strip()
+                tistory_blog = self.config.get('tistory_blog_name', '').strip()
+
+                if not tistory_token or not tistory_blog:
+                    self.progress.emit("⚠️ 티스토리 설정이 없어 건너뜁니다\n")
+                else:
+                    tistory_writer = TistoryBlogWriter(tistory_token, tistory_blog)
+                    # 연결 테스트
+                    self.progress.emit("🔗 티스토리 연결 테스트 중...")
+                    if not tistory_writer.test_connection():
+                        self.progress.emit("⚠️ 티스토리 연결 실패 - 건너뜁니다\n")
+                        tistory_writer = None
+                    else:
+                        self.progress.emit("✅ 티스토리 연결 성공\n")
+
+            # 멀티 블로그 포스팅 실행
+            results = multi_manager.post_to_multiple_blogs(
+                title=product_info['title'],
+                ai_result=ai_result,
+                image_files=image_files,
+                shopping_url=self.shopping_url,
+                naver_writer=naver_writer,
+                tistory_writer=tistory_writer,
+                blog_id=self.config['blog_id']
+            )
+
+            # 결과 확인
+            success_count = sum(1 for r in results.values() if r['success'])
+
+            if success_count > 0:
+                summary = multi_manager.get_summary()
+                self.finished.emit(True, f"포스팅 완료! 🎉\n\n{summary}")
+            else:
+                self.finished.emit(False, "모든 블로그 포스팅 실패")
+
         except Exception as e:
             self.finished.emit(False, f"오류 발생: {str(e)}")
+            import traceback
+            traceback.print_exc()
         finally:
             if self.bot:
                 self.bot.close()
@@ -345,7 +412,11 @@ class ConfigManager:
             "naver_id": "",
             "naver_pw": "",
             "gemini_api_key": "",
-            "last_login_email": ""
+            "last_login_email": "",
+            "tistory_access_token": "",
+            "tistory_blog_name": "",
+            "use_naver": True,
+            "use_tistory": False
         }
 
     @staticmethod
@@ -701,6 +772,45 @@ class MainWindow(QMainWindow):
         api_lay.addWidget(self.gemini_key_input)
         layout.addWidget(api_group)
 
+        # 티스토리 설정
+        tistory_group, tistory_lay = self.build_group("📘 티스토리 (선택)")
+        tistory_hint = QLabel("티스토리에도 동시 포스팅하려면 아래 정보를 입력하세요.")
+        tistory_hint.setStyleSheet(f"color:{Colors.TEXT_WEAK}; font-size:12px;")
+        tistory_lay.addWidget(tistory_hint)
+
+        # 티스토리 블로그 이름
+        tistory_blog_label = QLabel("블로그 이름 (예: myblog.tistory.com → myblog)")
+        tistory_blog_label.setStyleSheet(f"color:{Colors.TEXT_WEAK}; font-size:12px; font-weight:700;")
+        tistory_lay.addWidget(tistory_blog_label)
+        self.tistory_blog_input = LineEdit("티스토리 블로그 이름")
+        self.tistory_blog_input.setToolTip("티스토리 주소의 앞부분")
+        self.tistory_blog_input.setText(self.config.get('tistory_blog_name',''))
+        tistory_lay.addWidget(self.tistory_blog_input)
+
+        # 티스토리 액세스 토큰
+        tistory_token_label = QLabel("Access Token (티스토리 OpenAPI에서 발급)")
+        tistory_token_label.setStyleSheet(f"color:{Colors.TEXT_WEAK}; font-size:12px; font-weight:700;")
+        tistory_lay.addWidget(tistory_token_label)
+        self.tistory_token_input = LineEdit("티스토리 Access Token")
+        self.tistory_token_input.setToolTip("티스토리 OpenAPI에서 발급받은 토큰")
+        self.tistory_token_input.setEchoMode(QLineEdit.EchoMode.Password)
+        self.tistory_token_input.setText(self.config.get('tistory_access_token',''))
+        tistory_lay.addWidget(self.tistory_token_input)
+        layout.addWidget(tistory_group)
+
+        # 블로그 선택
+        blog_select_group, blog_select_lay = self.build_group("✅ 포스팅할 블로그 선택")
+        self.use_naver_checkbox = QCheckBox("네이버 블로그")
+        self.use_naver_checkbox.setChecked(self.config.get('use_naver', True))
+        self.use_naver_checkbox.setStyleSheet(f"color:{Colors.TEXT}; font-size:14px; font-weight:600;")
+        blog_select_lay.addWidget(self.use_naver_checkbox)
+
+        self.use_tistory_checkbox = QCheckBox("티스토리")
+        self.use_tistory_checkbox.setChecked(self.config.get('use_tistory', False))
+        self.use_tistory_checkbox.setStyleSheet(f"color:{Colors.TEXT}; font-size:14px; font-weight:600;")
+        blog_select_lay.addWidget(self.use_tistory_checkbox)
+        layout.addWidget(blog_select_group)
+
         save_bar = QWidget(); save_bar.setStyleSheet(f"background:{Colors.SURFACE}; border:none; border-radius:12px;")
         hb = QHBoxLayout(save_bar); hb.setContentsMargins(12,10,12,10)
         hb.addStretch(); save_btn = SolidButton("설정 저장", color=Colors.SUCCESS); hb.addWidget(save_btn)
@@ -718,17 +828,44 @@ class MainWindow(QMainWindow):
         if not url or url.startswith("https://naver.me/") is False:
             QMessageBox.warning(self, "입력 오류", "유효한 쇼핑 URL을 입력하세요.")
             return
-        if not all([self.blog_id_input.text().strip(), self.naver_id_input.text().strip(), self.naver_pw_input.text(), self.gemini_key_input.text().strip()]):
-            QMessageBox.warning(self, "설정 오류", "설정 정보를 모두 입력하세요.")
+
+        # 블로그 선택 확인
+        use_naver = self.use_naver_checkbox.isChecked()
+        use_tistory = self.use_tistory_checkbox.isChecked()
+
+        if not use_naver and not use_tistory:
+            QMessageBox.warning(self, "블로그 선택", "포스팅할 블로그를 최소 1개 선택하세요.")
             return
-        
+
+        # 네이버 설정 검증
+        if use_naver:
+            if not all([self.blog_id_input.text().strip(), self.naver_id_input.text().strip(),
+                       self.naver_pw_input.text(), self.gemini_key_input.text().strip()]):
+                QMessageBox.warning(self, "설정 오류", "네이버 블로그 설정 정보를 모두 입력하세요.")
+                return
+
+        # 티스토리 설정 검증
+        if use_tistory:
+            if not all([self.tistory_blog_input.text().strip(), self.tistory_token_input.text().strip()]):
+                reply = QMessageBox.question(
+                    self,
+                    "티스토리 설정",
+                    "티스토리 설정이 완료되지 않았습니다.\n네이버만 포스팅하시겠습니까?",
+                    QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No
+                )
+                if reply == QMessageBox.StandardButton.Yes:
+                    use_tistory = False
+                    self.use_tistory_checkbox.setChecked(False)
+                else:
+                    return
+
         # Firebase 사용 제한 체크
         if self.user_info and self.auth_manager.is_enabled():
             email = self.user_info.get('email')
             if not self.auth_manager.check_usage_limit(email):
                 QMessageBox.warning(
-                    self, 
-                    "사용 제한", 
+                    self,
+                    "사용 제한",
                     f"월 사용 제한에 도달했습니다.\n"
                     f"사용 횟수: {self.user_info.get('usage_count', 0)} / {self.user_info.get('usage_limit', 0)}"
                 )
@@ -743,7 +880,11 @@ class MainWindow(QMainWindow):
             'blog_id': self.blog_id_input.text().strip(),
             'naver_id': self.naver_id_input.text().strip(),
             'naver_pw': self.naver_pw_input.text(),
-            'gemini_api_key': self.gemini_key_input.text().strip()
+            'gemini_api_key': self.gemini_key_input.text().strip(),
+            'tistory_blog_name': self.tistory_blog_input.text().strip(),
+            'tistory_access_token': self.tistory_token_input.text().strip(),
+            'use_naver': use_naver,
+            'use_tistory': use_tistory
         }
         self.thread = AutomationThread(cfg, url)
         self.thread.progress.connect(self.update_progress)
@@ -778,13 +919,17 @@ class MainWindow(QMainWindow):
     def save_settings(self):
         # 1. 기존 설정을 불러옵니다.
         current_config = ConfigManager.load()
-        
+
         # 2. UI의 값으로 설정을 업데이트합니다.
         current_config['blog_id'] = self.blog_id_input.text().strip()
         current_config['naver_id'] = self.naver_id_input.text().strip()
         current_config['naver_pw'] = self.naver_pw_input.text()
         current_config['gemini_api_key'] = self.gemini_key_input.text().strip()
-        
+        current_config['tistory_blog_name'] = self.tistory_blog_input.text().strip()
+        current_config['tistory_access_token'] = self.tistory_token_input.text().strip()
+        current_config['use_naver'] = self.use_naver_checkbox.isChecked()
+        current_config['use_tistory'] = self.use_tistory_checkbox.isChecked()
+
         # 3. 업데이트된 전체 설정을 저장합니다.
         ConfigManager.save(current_config)
         QMessageBox.information(self, "저장 완료", "설정이 저장되었습니다! ✅")
