@@ -525,7 +525,7 @@ class MainWindow(QMainWindow):
 
         # 티스토리 설정 안내
         info_group, info_lay = self.build_group("📘 티스토리 설정")
-        info_text = QLabel(티스토리는 카카오이메일로 가입 가능합니다.)
+        info_text = QLabel("티스토리는 카카오이메일로 가입 가능합니다.")
         info_text.setStyleSheet(f"color:{Colors.TEXT_WEAK}; font-size:12px; line-height:1.6;")
         info_text.setWordWrap(True)
         info_lay.addWidget(info_text)
