@@ -1,0 +1,39 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+
+# 가상환경
+venv/
+env/
+ENV/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# 임시 파일
+temp_images/
+*.tmp
+
+# 민감한 정보 (보안!)
+master.key
+firebase_config.json
+firebase_config.enc
+보안키.txt
+*.key
+*.secret
+
+# OS
+.DS_Store
+Thumbs.db
+
+# 빌드
+build/
+dist/
+*.spec
+*.egg-info/
