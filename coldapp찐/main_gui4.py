@@ -498,7 +498,7 @@ class MainWindow(QMainWindow):
 
         # API 종료 안내
         api_notice = QLabel("ℹ️ 티스토리 Open API는 2024년 2월에 종료되어 Selenium 방식으로 변경되었습니다.")
-        api_notice.setStyleSheet(f"color:{Colors.ACCENT}; font-size:11px; padding:8px; background:{Colors.BG_STRONG}; border-radius:4px;")
+        api_notice.setStyleSheet(f"color:{Colors.PRIMARY}; font-size:11px; padding:8px; background:{Colors.BG}; border:1px solid {Colors.DIVIDER}; border-radius:4px;")
         api_notice.setWordWrap(True)
         tistory_lay.addWidget(api_notice)
         layout.addWidget(tistory_group)
