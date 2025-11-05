@@ -11,7 +11,7 @@ import sys
 from PyQt6.QtWidgets import (
     QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
     QLabel, QLineEdit, QPushButton, QTextEdit, QMessageBox, QFrame,
-    QStackedWidget, QSizePolicy, QSpacerItem, QCheckBox
+    QStackedWidget, QSizePolicy, QSpacerItem, QCheckBox, QDialog
 )
 from PyQt6.QtCore import Qt, QThread, pyqtSignal
 from PyQt6.QtGui import QFont, QIcon, QPixmap
