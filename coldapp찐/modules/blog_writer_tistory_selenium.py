@@ -140,20 +140,36 @@ class TistorySeleniumWriter:
             print("   🔍 카카오 로그인 버튼 찾는 중...")
             kakao_btn = None
             kakao_selectors = [
-                (By.CSS_SELECTOR, "a.btn_login.link_kakao_id"),  # 실제 클래스명
-                (By.CSS_SELECTOR, "a.link_kakao_id"),  # 짧은 버전
-                (By.XPATH, "//a[contains(@class, 'link_kakao_id')]"),  # XPath
-                (By.XPATH, "//a[contains(text(), '카카오계정으로 로그인')]"),  # 텍스트
+                # span 텍스트를 직접 찾기 (최우선!)
+                (By.XPATH, "//span[@class='txt_login' and contains(text(), '카카오계정으로 로그인')]"),
+                (By.CSS_SELECTOR, "span.txt_login"),  # span 직접
+                # 부모 a 태그
+                (By.CSS_SELECTOR, "a.btn_login.link_kakao_id"),
+                (By.CSS_SELECTOR, "a.link_kakao_id"),
+                (By.XPATH, "//a[contains(@class, 'link_kakao_id')]"),
             ]
 
             for selector_type, selector_value in kakao_selectors:
                 try:
-                    kakao_btn = WebDriverWait(self.driver, 5).until(
+                    element = WebDriverWait(self.driver, 5).until(
                         EC.presence_of_element_located((selector_type, selector_value))
                     )
-                    print(f"   ✅ 카카오 버튼 찾음: {selector_value}")
+                    print(f"   ✅ 카카오 버튼 요소 찾음: {selector_value}")
+
+                    # span을 찾았으면 부모 a 태그를 클릭해야 함
+                    if selector_value.startswith("//span") or "span" in selector_value:
+                        # span의 부모 a 태그 찾기
+                        try:
+                            kakao_btn = element.find_element(By.XPATH, "./ancestor::a[@class='btn_login link_kakao_id']")
+                            print(f"   ✅ 부모 a 태그 찾음")
+                        except:
+                            # 부모를 못 찾으면 element 자체 사용
+                            kakao_btn = element
+                    else:
+                        kakao_btn = element
+
                     break
-                except:
+                except Exception as e:
                     continue
 
             if not kakao_btn:
@@ -161,7 +177,20 @@ class TistorySeleniumWriter:
 
             # JavaScript로 클릭 (href="#"이므로 일반 클릭 대신)
             print("   🖱️  카카오 버튼 클릭 중 (JavaScript 방식)...")
-            self.driver.execute_script("arguments[0].click();", kakao_btn)
+            try:
+                # 방법 1: JavaScript 클릭
+                self.driver.execute_script("arguments[0].click();", kakao_btn)
+                print("   ✅ JavaScript 클릭 성공")
+            except:
+                try:
+                    # 방법 2: 일반 클릭
+                    kakao_btn.click()
+                    print("   ✅ 일반 클릭 성공")
+                except:
+                    # 방법 3: Actions 클릭
+                    from selenium.webdriver.common.action_chains import ActionChains
+                    ActionChains(self.driver).move_to_element(kakao_btn).click().perform()
+                    print("   ✅ Actions 클릭 성공")
 
             print("   ✅ 카카오 로그인 페이지로 이동 요청 완료")
             time.sleep(4)  # 카카오 페이지 로딩 대기
