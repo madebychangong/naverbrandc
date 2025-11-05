@@ -122,9 +122,21 @@ class TistorySeleniumWriter:
             # 쿠키 로그인 실패 시 수동 로그인
             print("   🔑 수동 로그인 시작...")
             self.driver.get("https://www.tistory.com/auth/login")
-            time.sleep(2)
 
-            # 카카오 로그인 버튼 클릭 (여러 셀렉터 시도)
+            # React 앱 로딩 대기 (중요!)
+            print("   ⏳ 페이지 로딩 대기 중...")
+            time.sleep(3)
+
+            # React 앱이 렌더링될 때까지 대기
+            try:
+                WebDriverWait(self.driver, 10).until(
+                    EC.presence_of_element_located((By.CSS_SELECTOR, "div[data-react-app='loginPagePC']"))
+                )
+                print("   ✅ React 앱 로딩 완료")
+            except:
+                print("   ⚠️ React 앱 확인 실패, 계속 진행...")
+
+            # 카카오 로그인 버튼 클릭 (여러 셀렉터 시도 + JavaScript 클릭)
             print("   🔍 카카오 로그인 버튼 찾는 중...")
             kakao_btn = None
             kakao_selectors = [
@@ -132,13 +144,12 @@ class TistorySeleniumWriter:
                 (By.CSS_SELECTOR, "a.link_kakao_id"),  # 짧은 버전
                 (By.XPATH, "//a[contains(@class, 'link_kakao_id')]"),  # XPath
                 (By.XPATH, "//a[contains(text(), '카카오계정으로 로그인')]"),  # 텍스트
-                (By.CSS_SELECTOR, "a[href*='kauth.kakao.com']"),  # 이전 방식 (백업)
             ]
 
             for selector_type, selector_value in kakao_selectors:
                 try:
                     kakao_btn = WebDriverWait(self.driver, 5).until(
-                        EC.element_to_be_clickable((selector_type, selector_value))
+                        EC.presence_of_element_located((selector_type, selector_value))
                     )
                     print(f"   ✅ 카카오 버튼 찾음: {selector_value}")
                     break
@@ -148,9 +159,12 @@ class TistorySeleniumWriter:
             if not kakao_btn:
                 raise Exception("카카오 로그인 버튼을 찾을 수 없습니다")
 
-            kakao_btn.click()
-            print("   ✅ 카카오 로그인 페이지 이동 완료")
-            time.sleep(3)
+            # JavaScript로 클릭 (href="#"이므로 일반 클릭 대신)
+            print("   🖱️  카카오 버튼 클릭 중 (JavaScript 방식)...")
+            self.driver.execute_script("arguments[0].click();", kakao_btn)
+
+            print("   ✅ 카카오 로그인 페이지로 이동 요청 완료")
+            time.sleep(4)  # 카카오 페이지 로딩 대기
 
             # 이메일 입력 (여러 셀렉터 시도)
             print("   📧 이메일 입력 중...")
