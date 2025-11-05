@@ -11,27 +11,16 @@ import sys
 from PyQt6.QtWidgets import (
     QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
     QLabel, QLineEdit, QPushButton, QTextEdit, QMessageBox, QFrame,
-    QStackedWidget, QSizePolicy, QSpacerItem, QDialog
+    QStackedWidget, QSizePolicy, QSpacerItem, QCheckBox, QDialog
 )
 from PyQt6.QtCore import Qt, QThread, pyqtSignal
 from PyQt6.QtGui import QFont, QIcon, QPixmap
-import json
 import os
-import webbrowser
 from naver_blog_automation import NaverBlogAutomation
 from firebase_auth import FirebaseAuthManager
-
-
-class Colors:
-    BG = "#F7F8FA"              # 전체 배경
-    SURFACE = "#FFFFFF"         # 표면
-    DIVIDER = "#E6E8EE"         # 구분선
-    PRIMARY = "#4F46E5"         # 인디고
-    PRIMARY_DARK = "#4338CA"
-    TEXT = "#1F2937"            # 본문
-    TEXT_WEAK = "#6B7280"       # 보조
-    DANGER = "#EF4444"
-    SUCCESS = "#10B981"
+from modules.blog_writer_tistory_selenium import TistorySeleniumWriter
+from modules.multi_blog_manager import MultiBlogManager
+from gui import Colors, NavButton, SolidButton, LineEdit, LogText, ConfigManager, LoginDialog
 
 
 class AutomationThread(QThread):
@@ -46,410 +35,124 @@ class AutomationThread(QThread):
 
     def run(self):
         try:
-            self.progress.emit("🌐 브라우저 시작 중...")
-            self.bot = NaverBlogAutomation(
-                self.config['blog_id'],
-                self.config['naver_id'],
-                self.config['naver_pw'],
-                self.config['gemini_api_key']
-            )
-            self.bot.start_browser()
-            self.progress.emit("✅ 브라우저 시작 완료\n")
+            use_naver = self.config.get('use_naver', True)
+            use_tistory = self.config.get('use_tistory', False)
 
-            self.progress.emit("🔐 로그인 중...")
-            if not self.bot.login():
-                self.finished.emit(False, "로그인 실패")
+            if not use_naver and not use_tistory:
+                self.finished.emit(False, "포스팅할 블로그를 최소 1개 선택하세요")
                 return
-            self.progress.emit("✅ 로그인 완료\n")
 
-            self.progress.emit("📦 제품 정보 추출 중...")
-            product_info = self.bot.extract_product_info(self.shopping_url)
-            if not product_info:
-                self.finished.emit(False, "제품 정보 추출 실패")
-                return
-            self.progress.emit(f"✅ 제품명: {product_info['title'][:50]}...\n")
+            # 1. 브라우저 시작 (네이버 사용 시에만)
+            if use_naver:
+                self.progress.emit("🌐 브라우저 시작 중...")
+                self.bot = NaverBlogAutomation(
+                    self.config['blog_id'],
+                    self.config['naver_id'],
+                    self.config['naver_pw'],
+                    self.config['gemini_api_key']
+                )
+                self.bot.start_browser()
+                self.progress.emit("✅ 브라우저 시작 완료\n")
 
-            self.progress.emit("💾 이미지 다운로드 중...")
-            image_files = self.bot.download_images(product_info['images'])
-            if not image_files:
-                self.finished.emit(False, "이미지 다운로드 실패 - 최소 1개")
-                return
-            self.progress.emit(f"✅ {len(image_files)}개 이미지 다운로드 완료\n")
+                self.progress.emit("🔐 네이버 로그인 중...")
+                if not self.bot.login():
+                    self.finished.emit(False, "네이버 로그인 실패")
+                    return
+                self.progress.emit("✅ 네이버 로그인 완료\n")
 
-            self.progress.emit("🤖 AI 글 생성 중...")
-            ai_result = self.bot.generate_ai_content(product_info)
-            if not ai_result:
-                self.finished.emit(False, "AI 글 생성 실패")
-                return
-            self.progress.emit(f"✅ AI 글 생성 완료 ({len(ai_result['content'])}자)\n")
-            self.progress.emit(f"✅ 태그 {len(ai_result['tags'])}개 생성\n")
+                # 2. 제품 정보 추출 (네이버 브라우저 사용)
+                self.progress.emit("📦 제품 정보 추출 중...")
+                product_info = self.bot.extract_product_info(self.shopping_url)
+                if not product_info:
+                    self.finished.emit(False, "제품 정보 추출 실패")
+                    return
+                self.progress.emit(f"✅ 제품명: {product_info['title'][:50]}...\n")
 
-            self.progress.emit("📝 블로그 글 작성 및 발행 중...")
-            if self.bot.write_blog_post(product_info['title'], ai_result, image_files, self.shopping_url):
-                self.finished.emit(True, "블로그 글 발행 완료! 🎉")
+                # 3. 이미지 다운로드
+                self.progress.emit("💾 이미지 다운로드 중...")
+                image_files = self.bot.download_images(product_info['images'])
+                if not image_files:
+                    self.finished.emit(False, "이미지 다운로드 실패 - 최소 1개")
+                    return
+                self.progress.emit(f"✅ {len(image_files)}개 이미지 다운로드 완료\n")
+
+                # 4. AI 글 생성
+                self.progress.emit("🤖 AI 글 생성 중...")
+                ai_result = self.bot.generate_ai_content(product_info)
+                if not ai_result:
+                    self.finished.emit(False, "AI 글 생성 실패")
+                    return
+                self.progress.emit(f"✅ AI 글 생성 완료 ({len(ai_result['content'])}자)\n")
+                self.progress.emit(f"✅ 태그 {len(ai_result['tags'])}개 생성\n")
+
             else:
-                self.finished.emit(False, "블로그 글 작성 실패")
+                # 티스토리만 사용하는 경우 - 간단한 방식으로 정보 수집
+                self.finished.emit(False, "티스토리 단독 사용은 아직 지원하지 않습니다. 네이버를 함께 선택해주세요.")
+                return
+
+            # 5. 멀티 블로그 포스팅
+            self.progress.emit("\n" + "="*50)
+            self.progress.emit("🚀 멀티 블로그 포스팅 시작")
+            self.progress.emit("="*50 + "\n")
+
+            multi_manager = MultiBlogManager()
+
+            # 네이버 작성자 준비
+            naver_writer = None
+            if use_naver:
+                from modules.blog_writer import BlogWriter
+                naver_writer = BlogWriter(self.bot.driver)
+
+            # 티스토리 작성자 준비 (Selenium 방식)
+            tistory_writer = None
+            if use_tistory:
+                tistory_email = self.config.get('tistory_kakao_email', '').strip()
+                tistory_password = self.config.get('tistory_kakao_password', '').strip()
+                tistory_blog = self.config.get('tistory_blog_name', '').strip()
+
+                if not tistory_email or not tistory_password or not tistory_blog:
+                    self.progress.emit("⚠️ 티스토리 설정이 없어 건너뜁니다\n")
+                else:
+                    tistory_writer = TistorySeleniumWriter(
+                        kakao_email=tistory_email,
+                        kakao_password=tistory_password,
+                        blog_name=tistory_blog
+                    )
+                    # 로그인
+                    self.progress.emit("🔗 티스토리 로그인 중...")
+                    if not tistory_writer.login():
+                        self.progress.emit("⚠️ 티스토리 로그인 실패 - 건너뜁니다\n")
+                        tistory_writer = None
+                    else:
+                        self.progress.emit("✅ 티스토리 로그인 성공\n")
+
+            # 멀티 블로그 포스팅 실행
+            results = multi_manager.post_to_multiple_blogs(
+                title=product_info['title'],
+                ai_result=ai_result,
+                image_files=image_files,
+                shopping_url=self.shopping_url,
+                naver_writer=naver_writer,
+                tistory_writer=tistory_writer,
+                blog_id=self.config['blog_id']
+            )
+
+            # 결과 확인
+            success_count = sum(1 for r in results.values() if r['success'])
+
+            if success_count > 0:
+                summary = multi_manager.get_summary()
+                self.finished.emit(True, f"포스팅 완료! 🎉\n\n{summary}")
+            else:
+                self.finished.emit(False, "모든 블로그 포스팅 실패")
+
         except Exception as e:
             self.finished.emit(False, f"오류 발생: {str(e)}")
+            import traceback
+            traceback.print_exc()
         finally:
             if self.bot:
                 self.bot.close()
-
-
-class LoginDialog(QDialog):
-    """Firebase 로그인 다이얼로그"""
-    
-    def __init__(self, auth_manager):
-        super().__init__()
-        self.auth_manager = auth_manager
-        self.user_info = None
-        self.init_ui()
-    
-    def init_ui(self):
-        self.setWindowTitle("ColdAPP - 로그인")
-        self.setFixedSize(400, 600)  # 높이 대폭 증가 (570 → 600)
-        self.setStyleSheet(f"background: {Colors.BG};")
-        
-        # 윈도우 아이콘 설정 (타이틀바)
-        if hasattr(sys, '_MEIPASS'):
-            # PyInstaller로 빌드된 EXE 환경
-            window_icon_path = os.path.join(sys._MEIPASS, 'assets', 'coldapp_icon_64x64.png')
-        else:
-            # 일반 Python 실행 환경
-            window_icon_path = os.path.join(os.path.dirname(__file__), 'assets', 'coldapp_icon_64x64.png')
-        
-        if os.path.exists(window_icon_path):
-            self.setWindowIcon(QIcon(window_icon_path))
-        
-        layout = QVBoxLayout(self)
-        layout.setContentsMargins(32, 32, 32, 24)  # 상단 여백 증가 (24 → 32)
-        layout.setSpacing(10)
-        
-        # 아이콘 (로그인 창 - 64x64)
-        icon_label = QLabel()
-        if hasattr(sys, '_MEIPASS'):
-            # PyInstaller로 빌드된 EXE 환경
-            icon_path = os.path.join(sys._MEIPASS, 'assets', 'coldapp_icon_64x64.png')
-        else:
-            # 일반 Python 실행 환경
-            icon_path = os.path.join(os.path.dirname(__file__), 'assets', 'coldapp_icon_64x64.png')
-        
-        if os.path.exists(icon_path):
-            icon_pixmap = QPixmap(icon_path)
-            icon_label.setPixmap(icon_pixmap)
-            icon_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-            icon_label.setFixedHeight(120)  # 훨씬 더 큰 높이 (100 → 120)
-        else:
-            # 아이콘 못 찾았을 때 대체
-            print(f"⚠️ 아이콘 못 찾음: {icon_path}")
-        
-        layout.addWidget(icon_label)
-        
-        # 타이틀
-        title = QLabel("ColdAPP")
-        title.setStyleSheet(f"color: {Colors.TEXT}; font-size: 24px; font-weight: 800;")
-        title.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        layout.addWidget(title)
-        
-        subtitle = QLabel("AI 자동 포스팅")
-        subtitle.setStyleSheet(f"color: {Colors.TEXT_WEAK}; font-size: 14px; font-weight: 600;")
-        subtitle.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        layout.addWidget(subtitle)
-        
-        layout.addSpacing(8)  # 상단 섹션 마무리
-        
-        # 이메일 입력
-        email_label = QLabel("이메일")
-        email_label.setStyleSheet(f"color: {Colors.TEXT_WEAK}; font-size: 12px; font-weight: 700;")
-        layout.addWidget(email_label)
-        
-        # 저장된 이메일 불러오기
-        saved_email = ConfigManager.load_login_email()
-        self.email_input = LineEdit("user@example.com")  # placeholder는 예시로
-        if saved_email:
-            self.email_input.setText(saved_email)  # 실제 값으로 저장된 이메일 입력
-        self.email_input.setFixedHeight(40)
-        layout.addWidget(self.email_input)
-        
-        layout.addSpacing(4)  # 이메일과 비밀번호 사이 작은 여백
-        
-        # 비밀번호 입력
-        pw_label = QLabel("비밀번호")
-        pw_label.setStyleSheet(f"color: {Colors.TEXT_WEAK}; font-size: 12px; font-weight: 700;")
-        layout.addWidget(pw_label)
-        
-        self.pw_input = LineEdit("비밀번호")
-        self.pw_input.setEchoMode(QLineEdit.EchoMode.Password)
-        self.pw_input.setFixedHeight(40)
-        layout.addWidget(self.pw_input)
-        
-        layout.addSpacing(14)  # 비밀번호와 로그인 버튼 사이 **늘린 여백**
-        
-        # 로그인 버튼
-        self.login_btn = SolidButton("로그인")
-        self.login_btn.clicked.connect(self.try_login)
-        self.login_btn.setFixedHeight(44)
-        layout.addWidget(self.login_btn)
-        
-        layout.addSpacing(8)  # 로그인 버튼과 하단 버튼들 사이 간격
-        
-        # 하단 버튼들을 가로로 배치
-        bottom_button_layout = QHBoxLayout()
-        bottom_button_layout.setSpacing(8)
-        
-        # 회원가입 버튼 (왼쪽)
-        self.signup_btn = QPushButton("회원가입")
-        self.signup_btn.setStyleSheet(f"""
-            QPushButton {{
-                background: transparent;
-                color: {Colors.PRIMARY};
-                border: 1px solid {Colors.PRIMARY};
-                border-radius: 8px;
-                font-weight: 600;
-                padding: 0 16px;
-            }}
-            QPushButton:hover {{
-                background: {Colors.PRIMARY};
-                color: white;
-            }}
-        """)
-        self.signup_btn.setFixedHeight(38)
-        self.signup_btn.clicked.connect(self.do_signup)
-        bottom_button_layout.addWidget(self.signup_btn)
-        
-        # 문의 버튼 (오른쪽)
-        self.inquiry_btn = QPushButton("관리자 문의")
-        self.inquiry_btn.setStyleSheet(f"""
-            QPushButton {{
-                background: transparent;
-                color: {Colors.PRIMARY};
-                border: 1px solid {Colors.PRIMARY};
-                border-radius: 8px;
-                font-weight: 600;
-                padding: 0 16px;
-            }}
-            QPushButton:hover {{
-                background: {Colors.PRIMARY};
-                color: white;
-            }}
-        """)
-        self.inquiry_btn.setFixedHeight(38)
-        self.inquiry_btn.clicked.connect(self.open_inquiry)
-        bottom_button_layout.addWidget(self.inquiry_btn)
-        
-        layout.addLayout(bottom_button_layout)
-        
-        layout.addSpacing(6)  # 버튼과 상태 메시지 사이 작은 여백
-        
-        # 상태 메시지 (고정 높이 - 오류 메시지 표시 공간)
-        self.status_label = QLabel("")
-        self.status_label.setStyleSheet(f"color: {Colors.DANGER}; font-size: 12px;")
-        self.status_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self.status_label.setWordWrap(True)
-        self.status_label.setFixedHeight(40)  # 오류 메시지 공간 (고정)
-        layout.addWidget(self.status_label)
-        
-        layout.addSpacing(8)  # 상태 메시지와 Made by Changong 사이 여백
-        
-        # Made by Changong (하단 정중앙)
-        made_by_label = QLabel("Made by Changong")
-        made_by_label.setStyleSheet(f"color: {Colors.TEXT_WEAK}; font-size: 10px; font-weight: 500;")
-        made_by_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        layout.addWidget(made_by_label)
-    
-    def try_login(self):
-        email = self.email_input.text().strip()
-        password = self.pw_input.text()
-        
-        if not email or not password:
-            self.status_label.setText("이메일과 비밀번호를 입력하세요.")
-            return
-        
-        if not self.auth_manager.is_enabled():
-            self.status_label.setText("⚠️ Firebase가 비활성화되어 있습니다.\n계속 진행할 수 없습니다.")
-            return
-        
-        result = self.auth_manager.verify_user(email, password)
-        
-        if 'error' in result:
-            self.status_label.setText(result['error'])
-        else:
-            self.user_info = result
-            # 로그인 성공 시 이메일 저장
-            ConfigManager.save_login_email(email)
-            self.accept()
-    
-    def do_signup(self):
-        """회원가입 - 웹페이지로 연결"""
-        try:
-            reply = QMessageBox.question(
-                self,
-                "회원가입",
-                "회원가입 페이지로 이동하시겠습니까?",
-                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No
-            )
-            
-            if reply == QMessageBox.StandardButton.Yes:
-                # signup2로 변경된 회원가입 URL
-                signup_url = "https://xn--ob0by50d.store/signup2"
-                webbrowser.open(signup_url)
-        except Exception as e:
-            QMessageBox.warning(self, "오류", f"회원가입 페이지를 열 수 없습니다.\n{str(e)}")
-    
-    def open_inquiry(self):
-        """관리자 문의 - 홈페이지로 연결"""
-        try:
-            reply = QMessageBox.question(
-                self,
-                "관리자 문의",
-                "홈페이지로 이동하시겠습니까?",
-                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No
-            )
-            
-            if reply == QMessageBox.StandardButton.Yes:
-                # 홈페이지 URL
-                website_url = "https://xn--ob0by50d.store/"
-                webbrowser.open(website_url)
-        except Exception as e:
-            QMessageBox.warning(self, "오류", f"홈페이지를 열 수 없습니다.\n{str(e)}")
-
-
-
-class ConfigManager:
-    """
-    ColdAPP 설정 및 로그인 이메일 저장 관리자
-    AppData\Roaming\ColdAPP\config.json 에 저장
-    """
-    CONFIG_DIR = os.path.join(os.getenv("APPDATA"), "ColdAPP")
-    CONFIG_FILE = os.path.join(CONFIG_DIR, "config.json")
-
-    @staticmethod
-    def ensure_dir():
-        """폴더가 없으면 자동 생성"""
-        if not os.path.exists(ConfigManager.CONFIG_DIR):
-            os.makedirs(ConfigManager.CONFIG_DIR, exist_ok=True)
-
-    @staticmethod
-    def load():
-        """설정 파일 불러오기"""
-        ConfigManager.ensure_dir()
-        if os.path.exists(ConfigManager.CONFIG_FILE):
-            try:
-                with open(ConfigManager.CONFIG_FILE, 'r', encoding='utf-8') as f:
-                    return json.load(f)
-            except:
-                pass
-        # 기본 구조 반환
-        return {
-            "blog_id": "",
-            "naver_id": "",
-            "naver_pw": "",
-            "gemini_api_key": "",
-            "tistory_blog_id": "",
-            "tistory_token": "",
-            "last_login_email": ""
-        }
-
-    @staticmethod
-    def save(config):
-        """설정 파일 저장"""
-        ConfigManager.ensure_dir()
-        with open(ConfigManager.CONFIG_FILE, 'w', encoding='utf-8') as f:
-            json.dump(config, f, indent=2, ensure_ascii=False)
-
-    @staticmethod
-    def save_login_email(email: str):
-        """Firebase 로그인 이메일만 저장"""
-        config = ConfigManager.load()
-        config["last_login_email"] = email
-        ConfigManager.save(config)
-
-    @staticmethod
-    def load_login_email() -> str:
-        """저장된 Firebase 로그인 이메일 불러오기"""
-        config = ConfigManager.load()
-        return config.get("last_login_email", "")
-
-
-
-class NavButton(QPushButton):
-    def __init__(self, text, active=False):
-        super().__init__(text)
-        self.setCursor(Qt.CursorShape.PointingHandCursor)
-        self.setFixedHeight(40)
-        self.setCheckable(True)
-        self.setChecked(active)
-        self.setStyleSheet(f"""
-            QPushButton {{
-                text-align: left;
-                padding: 0 14px;
-                border: none;
-                border-radius: 12px;
-                background: transparent;
-                color: {Colors.TEXT_WEAK};
-                font-weight: 600;
-            }}
-            QPushButton:hover {{
-                background: #EEF2FF;
-                color: {Colors.PRIMARY};
-            }}
-            QPushButton:checked {{
-                background: #EEF2FF;
-                color: {Colors.PRIMARY};
-            }}
-        """)
-
-
-class SolidButton(QPushButton):
-    def __init__(self, text, color=Colors.PRIMARY):
-        super().__init__(text)
-        self.color = color
-        self.setCursor(Qt.CursorShape.PointingHandCursor)
-        self.setFixedHeight(44)
-        self.setStyleSheet(f"""
-            QPushButton {{
-                background: {self.color};
-                color: white; border: none; border-radius: 12px;
-                font-weight: 700; padding: 0 18px;
-            }}
-            QPushButton:hover {{ background: {Colors.PRIMARY_DARK}; }}
-            QPushButton:disabled {{ background: #CBD5E1; color: white; }}
-        """)
-
-
-class LineEdit(QLineEdit):
-    def __init__(self, placeholder=""):
-        super().__init__()
-        self.setPlaceholderText(placeholder)
-        self.setFixedHeight(44)
-        self.setStyleSheet(f"""
-            QLineEdit {{
-                background: #F9FAFB;
-                border: 1px solid #E5E7EB;
-                border-radius: 12px;
-                padding: 0 12px;
-                color: {Colors.TEXT};
-            }}
-            QLineEdit:focus {{
-                background: {Colors.SURFACE};
-                border: 2px solid {Colors.PRIMARY};
-            }}
-        """)
-
-
-class LogText(QTextEdit):
-    def __init__(self):
-        super().__init__()
-        self.setReadOnly(True)
-        self.setStyleSheet(f"""
-            QTextEdit {{
-                background: #F9FAFB;
-                border: 1px solid #E5E7EB;
-                border-radius: 12px;
-                padding: 12px;
-                color: {Colors.TEXT};
-            }}
-        """)
 
 
 class MainWindow(QMainWindow):
@@ -521,10 +224,12 @@ class MainWindow(QMainWindow):
         divider.setStyleSheet(f"color:{Colors.DIVIDER};")
         side_layout.addWidget(divider)
 
-        self.btn_automation = NavButton("자동 포스팅", True)
-        self.btn_settings = NavButton("설정")
+        self.btn_automation = NavButton("📝 자동 포스팅", True)
+        self.btn_naver_settings = NavButton("⚙️ 네이버 설정")
+        self.btn_tistory_settings = NavButton("📘 티스토리 설정")
         side_layout.addWidget(self.btn_automation)
-        side_layout.addWidget(self.btn_settings)
+        side_layout.addWidget(self.btn_naver_settings)
+        side_layout.addWidget(self.btn_tistory_settings)
         side_layout.addItem(QSpacerItem(20, 20, QSizePolicy.Policy.Minimum, QSizePolicy.Policy.Expanding))
 
         # 사용자 정보 카드 (왼쪽 아래)
@@ -607,9 +312,11 @@ class MainWindow(QMainWindow):
         # 스택
         self.stack = QStackedWidget()
         self.page_automation = self.build_automation_page()
-        self.page_settings = self.build_settings_page()
+        self.page_naver_settings = self.build_naver_settings_page()
+        self.page_tistory_settings = self.build_tistory_settings_page()
         self.stack.addWidget(self.page_automation)
-        self.stack.addWidget(self.page_settings)
+        self.stack.addWidget(self.page_naver_settings)
+        self.stack.addWidget(self.page_tistory_settings)
         content_layout.addWidget(self.stack)
 
         # 레이아웃 조합
@@ -618,7 +325,8 @@ class MainWindow(QMainWindow):
 
         # 이벤트 연결
         self.btn_automation.clicked.connect(lambda: self.switch_page(0))
-        self.btn_settings.clicked.connect(lambda: self.switch_page(1))
+        self.btn_naver_settings.clicked.connect(lambda: self.switch_page(1))
+        self.btn_tistory_settings.clicked.connect(lambda: self.switch_page(2))
         self.start_btn.clicked.connect(self.start_automation)
         self.stop_btn.clicked.connect(self.stop_automation)
 
@@ -658,7 +366,7 @@ class MainWindow(QMainWindow):
         layout.addWidget(log_group, 1)
         return page
 
-    def build_settings_page(self) -> QWidget:
+    def build_naver_settings_page(self) -> QWidget:
         page = QWidget(); layout = QVBoxLayout(page)
         layout.setContentsMargins(0, 0, 0, 0); layout.setSpacing(12)
 
@@ -703,31 +411,124 @@ class MainWindow(QMainWindow):
         api_lay.addWidget(self.gemini_key_input)
         layout.addWidget(api_group)
 
-        # 티스토리 설정
-        tistory_group, tistory_lay = self.build_group("📝 티스토리 설정")
-        tistory_hint = QLabel("티스토리 블로그 정보를 입력하세요.")
-        tistory_hint.setStyleSheet(f"color:{Colors.TEXT_WEAK}; font-size:12px;")
-        tistory_lay.addWidget(tistory_hint)
+        # 네이버 포스팅 활성화
+        naver_select_group, naver_select_lay = self.build_group("✅ 네이버 포스팅 활성화")
+        self.use_naver_checkbox = QCheckBox("네이버 블로그 포스팅 사용")
+        self.use_naver_checkbox.setChecked(self.config.get('use_naver', True))
+        self.use_naver_checkbox.setStyleSheet(f"""
+            QCheckBox {{
+                color: {Colors.TEXT};
+                font-size: 14px;
+                font-weight: 600;
+                spacing: 10px;
+            }}
+            QCheckBox::indicator {{
+                width: 24px;
+                height: 24px;
+                border: 2px solid #D1D5DB;
+                border-radius: 6px;
+                background: white;
+            }}
+            QCheckBox::indicator:hover {{
+                border: 2px solid {Colors.PRIMARY};
+                background: #EEF2FF;
+            }}
+            QCheckBox::indicator:checked {{
+                background: {Colors.PRIMARY};
+                border: 2px solid {Colors.PRIMARY};
+                image: url(data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMTYiIGhlaWdodD0iMTYiIHZpZXdCb3g9IjAgMCAxNiAxNiIgZmlsbD0ibm9uZSIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj4KPHBhdGggZD0iTTMgOEw2LjUgMTEuNUwxMyA0LjUiIHN0cm9rZT0id2hpdGUiIHN0cm9rZS13aWR0aD0iMiIgc3Ryb2tlLWxpbmVjYXA9InJvdW5kIiBzdHJva2UtbGluZWpvaW49InJvdW5kIi8+Cjwvc3ZnPgo=);
+            }}
+        """)
+        naver_select_lay.addWidget(self.use_naver_checkbox)
+        layout.addWidget(naver_select_group)
 
-        # 티스토리 블로그 ID
-        tistory_blog_label = QLabel("티스토리 블로그 ID")
+        save_bar = QWidget(); save_bar.setStyleSheet(f"background:{Colors.SURFACE}; border:none; border-radius:12px;")
+        hb = QHBoxLayout(save_bar); hb.setContentsMargins(12,10,12,10)
+        hb.addStretch(); save_btn = SolidButton("설정 저장", color=Colors.SUCCESS); hb.addWidget(save_btn)
+        layout.addWidget(save_bar)
+        save_btn.clicked.connect(self.save_settings)
+        return page
+
+    def build_tistory_settings_page(self) -> QWidget:
+        page = QWidget(); layout = QVBoxLayout(page)
+        layout.setContentsMargins(0, 0, 0, 0); layout.setSpacing(12)
+
+        # 티스토리 설정 안내
+        info_group, info_lay = self.build_group("📘 티스토리 설정")
+        info_text = QLabel(티스토리는 카카오이메일로 가입 가능합니다.)
+        info_text.setStyleSheet(f"color:{Colors.TEXT_WEAK}; font-size:12px; line-height:1.6;")
+        info_text.setWordWrap(True)
+        info_lay.addWidget(info_text)
+        layout.addWidget(info_group)
+
+        # 티스토리 블로그 설정
+        tistory_group, tistory_lay = self.build_group("🌐 티스토리 블로그")
+
+        # 블로그 이름
+        tistory_blog_label = QLabel("블로그 이름 (예: myblog.tistory.com → myblog)")
         tistory_blog_label.setStyleSheet(f"color:{Colors.TEXT_WEAK}; font-size:12px; font-weight:700;")
         tistory_lay.addWidget(tistory_blog_label)
-        self.tistory_blog_input = LineEdit("예: myblog")
-        self.tistory_blog_input.setToolTip("티스토리 블로그 주소 (myblog.tistory.com의 myblog 부분)")
-        self.tistory_blog_input.setText(self.config.get('tistory_blog_id',''))
+        self.tistory_blog_input = LineEdit("티스토리 블로그 이름")
+        self.tistory_blog_input.setToolTip("티스토리 주소의 앞부분 (예: myblog)")
+        self.tistory_blog_input.setText(self.config.get('tistory_blog_name',''))
         tistory_lay.addWidget(self.tistory_blog_input)
 
-        # 티스토리 API 토큰
-        tistory_token_label = QLabel("티스토리 Access Token")
-        tistory_token_label.setStyleSheet(f"color:{Colors.TEXT_WEAK}; font-size:12px; font-weight:700;")
-        tistory_lay.addWidget(tistory_token_label)
-        self.tistory_token_input = LineEdit("티스토리 API Access Token")
-        self.tistory_token_input.setToolTip("티스토리 Open API에서 발급받은 Access Token")
-        self.tistory_token_input.setEchoMode(QLineEdit.EchoMode.Password)
-        self.tistory_token_input.setText(self.config.get('tistory_token',''))
-        tistory_lay.addWidget(self.tistory_token_input)
+        # 카카오 이메일
+        tistory_email_label = QLabel("카카오 이메일")
+        tistory_email_label.setStyleSheet(f"color:{Colors.TEXT_WEAK}; font-size:12px; font-weight:700;")
+        tistory_lay.addWidget(tistory_email_label)
+        self.tistory_email_input = LineEdit("카카오 이메일")
+        self.tistory_email_input.setToolTip("카카오 계정 이메일")
+        self.tistory_email_input.setText(self.config.get('tistory_kakao_email',''))
+        tistory_lay.addWidget(self.tistory_email_input)
+
+        # 카카오 비밀번호
+        tistory_password_label = QLabel("카카오 비밀번호")
+        tistory_password_label.setStyleSheet(f"color:{Colors.TEXT_WEAK}; font-size:12px; font-weight:700;")
+        tistory_lay.addWidget(tistory_password_label)
+        self.tistory_password_input = LineEdit("카카오 비밀번호")
+        self.tistory_password_input.setToolTip("카카오 계정 비밀번호")
+        self.tistory_password_input.setEchoMode(QLineEdit.EchoMode.Password)
+        self.tistory_password_input.setText(self.config.get('tistory_kakao_password',''))
+        tistory_lay.addWidget(self.tistory_password_input)
+
+        # API 종료 안내
+        api_notice = QLabel("ℹ️ OPEN AI 설정은 네이버 설정에 있습니다.")
+        api_notice.setStyleSheet(f"color:{Colors.PRIMARY}; font-size:11px; padding:8px; background:{Colors.BG}; border:1px solid {Colors.DIVIDER}; border-radius:4px;")
+        api_notice.setWordWrap(True)
+        tistory_lay.addWidget(api_notice)
         layout.addWidget(tistory_group)
+
+        # 티스토리 포스팅 활성화
+        tistory_select_group, tistory_select_lay = self.build_group("✅ 티스토리 포스팅 활성화")
+        self.use_tistory_checkbox = QCheckBox("티스토리 포스팅 사용")
+        self.use_tistory_checkbox.setChecked(self.config.get('use_tistory', False))
+        self.use_tistory_checkbox.setStyleSheet(f"""
+            QCheckBox {{
+                color: {Colors.TEXT};
+                font-size: 14px;
+                font-weight: 600;
+                spacing: 10px;
+            }}
+            QCheckBox::indicator {{
+                width: 24px;
+                height: 24px;
+                border: 2px solid #D1D5DB;
+                border-radius: 6px;
+                background: white;
+            }}
+            QCheckBox::indicator:hover {{
+                border: 2px solid {Colors.PRIMARY};
+                background: #EEF2FF;
+            }}
+            QCheckBox::indicator:checked {{
+                background: {Colors.PRIMARY};
+                border: 2px solid {Colors.PRIMARY};
+                image: url(data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMTYiIGhlaWdodD0iMTYiIHZpZXdCb3g9IjAgMCAxNiAxNiIgZmlsbD0ibm9uZSIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj4KPHBhdGggZD0iTTMgOEw2LjUgMTEuNUwxMyA0LjUiIHN0cm9rZT0id2hpdGUiIHN0cm9rZS13aWR0aD0iMiIgc3Ryb2tlLWxpbmVjYXA9InJvdW5kIiBzdHJva2UtbGluZWpvaW49InJvdW5kIi8+Cjwvc3ZnPgo=);
+            }}
+        """)
+        tistory_select_lay.addWidget(self.use_tistory_checkbox)
+        layout.addWidget(tistory_select_group)
 
         save_bar = QWidget(); save_bar.setStyleSheet(f"background:{Colors.SURFACE}; border:none; border-radius:12px;")
         hb = QHBoxLayout(save_bar); hb.setContentsMargins(12,10,12,10)
@@ -739,24 +540,54 @@ class MainWindow(QMainWindow):
     def switch_page(self, index: int):
         self.stack.setCurrentIndex(index)
         self.btn_automation.setChecked(index == 0)
-        self.btn_settings.setChecked(index == 1)
+        self.btn_naver_settings.setChecked(index == 1)
+        self.btn_tistory_settings.setChecked(index == 2)
 
     def start_automation(self):
         url = self.url_input.text().strip()
         if not url or url.startswith("https://naver.me/") is False:
             QMessageBox.warning(self, "입력 오류", "유효한 쇼핑 URL을 입력하세요.")
             return
-        if not all([self.blog_id_input.text().strip(), self.naver_id_input.text().strip(), self.naver_pw_input.text(), self.gemini_key_input.text().strip()]):
-            QMessageBox.warning(self, "설정 오류", "설정 정보를 모두 입력하세요.")
+
+        # 블로그 선택 확인
+        use_naver = self.use_naver_checkbox.isChecked()
+        use_tistory = self.use_tistory_checkbox.isChecked()
+
+        if not use_naver and not use_tistory:
+            QMessageBox.warning(self, "블로그 선택", "포스팅할 블로그를 최소 1개 선택하세요.")
             return
-        
+
+        # 네이버 설정 검증
+        if use_naver:
+            if not all([self.blog_id_input.text().strip(), self.naver_id_input.text().strip(),
+                       self.naver_pw_input.text(), self.gemini_key_input.text().strip()]):
+                QMessageBox.warning(self, "설정 오류", "네이버 블로그 설정 정보를 모두 입력하세요.")
+                return
+
+        # 티스토리 설정 검증
+        if use_tistory:
+            if not all([self.tistory_blog_input.text().strip(),
+                       self.tistory_email_input.text().strip(),
+                       self.tistory_password_input.text().strip()]):
+                reply = QMessageBox.question(
+                    self,
+                    "티스토리 설정",
+                    "티스토리 설정이 완료되지 않았습니다.\n네이버만 포스팅하시겠습니까?",
+                    QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No
+                )
+                if reply == QMessageBox.StandardButton.Yes:
+                    use_tistory = False
+                    self.use_tistory_checkbox.setChecked(False)
+                else:
+                    return
+
         # Firebase 사용 제한 체크
         if self.user_info and self.auth_manager.is_enabled():
             email = self.user_info.get('email')
             if not self.auth_manager.check_usage_limit(email):
                 QMessageBox.warning(
-                    self, 
-                    "사용 제한", 
+                    self,
+                    "사용 제한",
                     f"월 사용 제한에 도달했습니다.\n"
                     f"사용 횟수: {self.user_info.get('usage_count', 0)} / {self.user_info.get('usage_limit', 0)}"
                 )
@@ -771,7 +602,12 @@ class MainWindow(QMainWindow):
             'blog_id': self.blog_id_input.text().strip(),
             'naver_id': self.naver_id_input.text().strip(),
             'naver_pw': self.naver_pw_input.text(),
-            'gemini_api_key': self.gemini_key_input.text().strip()
+            'gemini_api_key': self.gemini_key_input.text().strip(),
+            'tistory_blog_name': self.tistory_blog_input.text().strip(),
+            'tistory_kakao_email': self.tistory_email_input.text().strip(),
+            'tistory_kakao_password': self.tistory_password_input.text().strip(),
+            'use_naver': use_naver,
+            'use_tistory': use_tistory
         }
         self.thread = AutomationThread(cfg, url)
         self.thread.progress.connect(self.update_progress)
@@ -812,8 +648,11 @@ class MainWindow(QMainWindow):
         current_config['naver_id'] = self.naver_id_input.text().strip()
         current_config['naver_pw'] = self.naver_pw_input.text()
         current_config['gemini_api_key'] = self.gemini_key_input.text().strip()
-        current_config['tistory_blog_id'] = self.tistory_blog_input.text().strip()
-        current_config['tistory_token'] = self.tistory_token_input.text().strip()
+        current_config['tistory_blog_name'] = self.tistory_blog_input.text().strip()
+        current_config['tistory_kakao_email'] = self.tistory_email_input.text().strip()
+        current_config['tistory_kakao_password'] = self.tistory_password_input.text().strip()
+        current_config['use_naver'] = self.use_naver_checkbox.isChecked()
+        current_config['use_tistory'] = self.use_tistory_checkbox.isChecked()
 
         # 3. 업데이트된 전체 설정을 저장합니다.
         ConfigManager.save(current_config)
