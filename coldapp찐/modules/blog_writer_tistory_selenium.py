@@ -248,14 +248,15 @@ class TistorySeleniumWriter:
             password_input.send_keys(self.kakao_password)
             time.sleep(1)
 
-            # 로그인 버튼 클릭 (여러 셀렉터 시도)
+            # 로그인 버튼 클릭 (여러 셀렉터 + 여러 클릭 방법 시도)
             print("   🚀 로그인 버튼 클릭...")
             login_btn = None
             login_selectors = [
-                (By.CSS_SELECTOR, "button.btn_g.highlight.submit"),  # 기본
+                (By.CSS_SELECTOR, "button.btn_g.highlight.submit"),  # 정확한 클래스
+                (By.CSS_SELECTOR, "button[type='submit'].submit"),  # type + class
                 (By.CSS_SELECTOR, "button[type='submit']"),  # type=submit
+                (By.XPATH, "//button[@type='submit' and contains(@class, 'submit')]"),  # XPath
                 (By.XPATH, "//button[@type='submit']"),  # XPath 백업
-                (By.CSS_SELECTOR, "button.submit_btn"),  # 클래스명
             ]
 
             for selector_type, selector_value in login_selectors:
@@ -269,7 +270,48 @@ class TistorySeleniumWriter:
             if not login_btn:
                 raise Exception("로그인 버튼을 찾을 수 없습니다")
 
-            login_btn.click()
+            # 여러 클릭 방법 시도
+            print("   🖱️  로그인 버튼 클릭 시도...")
+            clicked = False
+
+            # 방법 1: JavaScript 클릭
+            try:
+                self.driver.execute_script("arguments[0].click();", login_btn)
+                print("   ✅ JavaScript 클릭 성공")
+                clicked = True
+            except Exception as e:
+                print(f"   ⚠️ JavaScript 클릭 실패: {e}")
+
+            if not clicked:
+                # 방법 2: 일반 Selenium 클릭
+                try:
+                    login_btn.click()
+                    print("   ✅ 일반 클릭 성공")
+                    clicked = True
+                except Exception as e:
+                    print(f"   ⚠️ 일반 클릭 실패: {e}")
+
+            if not clicked:
+                # 방법 3: ActionChains 클릭
+                try:
+                    from selenium.webdriver.common.action_chains import ActionChains
+                    ActionChains(self.driver).move_to_element(login_btn).click().perform()
+                    print("   ✅ ActionChains 클릭 성공")
+                    clicked = True
+                except Exception as e:
+                    print(f"   ⚠️ ActionChains 클릭 실패: {e}")
+
+            if not clicked:
+                # 방법 4: Enter 키 입력 (비밀번호 필드에서)
+                try:
+                    password_input.send_keys(Keys.RETURN)
+                    print("   ✅ Enter 키 전송 성공")
+                    clicked = True
+                except Exception as e:
+                    print(f"   ⚠️ Enter 키 전송 실패: {e}")
+
+            if not clicked:
+                raise Exception("모든 로그인 버튼 클릭 방법 실패")
 
             # 로그인 완료 대기 (최대 15초)
             print("   ⏳ 로그인 처리 중...")
@@ -470,6 +512,28 @@ class TistorySeleniumWriter:
             # 1. 글쓰기 페이지 이동
             self.driver.get(self.editor_url)
             time.sleep(3)
+
+            # 1-1. 팝업 닫기 (있을 경우)
+            print("   🔍 팝업 확인 및 닫기...")
+            try:
+                # 방법 1: ESC 키로 닫기
+                from selenium.webdriver.common.action_chains import ActionChains
+                ActionChains(self.driver).send_keys(Keys.ESCAPE).perform()
+                time.sleep(0.5)
+                print("   ✅ ESC 키 전송 (팝업 닫기 시도)")
+            except Exception as e:
+                print(f"   ℹ️  ESC 키 전송 실패 (팝업 없을 수 있음): {e}")
+
+            try:
+                # 방법 2: Tab -> Enter로 닫기
+                ActionChains(self.driver).send_keys(Keys.TAB).send_keys(Keys.RETURN).perform()
+                time.sleep(0.5)
+                print("   ✅ Tab+Enter 전송 (팝업 닫기 시도)")
+            except Exception as e:
+                print(f"   ℹ️  Tab+Enter 전송 실패: {e}")
+
+            # 팝업 닫기 후 잠깐 대기
+            time.sleep(1)
 
             # 2. 이미지 업로드
             print(f"\n📤 이미지 업로드 중 ({len(image_files)}개)...")
