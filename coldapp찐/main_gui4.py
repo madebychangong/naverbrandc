@@ -42,7 +42,12 @@ class AutomationThread(QThread):
                 self.finished.emit(False, "포스팅할 블로그를 최소 1개 선택하세요")
                 return
 
-            # 1. 브라우저 시작 (네이버 사용 시에만)
+            # 공통: 콘텐츠 생성을 위한 변수
+            product_info = None
+            image_files = None
+            ai_result = None
+
+            # 1. 네이버 사용 시 (기존 방식)
             if use_naver:
                 self.progress.emit("🌐 브라우저 시작 중...")
                 self.bot = NaverBlogAutomation(
@@ -60,7 +65,7 @@ class AutomationThread(QThread):
                     return
                 self.progress.emit("✅ 네이버 로그인 완료\n")
 
-                # 2. 제품 정보 추출 (네이버 브라우저 사용)
+                # 제품 정보 추출
                 self.progress.emit("📦 제품 정보 추출 중...")
                 product_info = self.bot.extract_product_info(self.shopping_url)
                 if not product_info:
@@ -68,7 +73,7 @@ class AutomationThread(QThread):
                     return
                 self.progress.emit(f"✅ 제품명: {product_info['title'][:50]}...\n")
 
-                # 3. 이미지 다운로드
+                # 이미지 다운로드
                 self.progress.emit("💾 이미지 다운로드 중...")
                 image_files = self.bot.download_images(product_info['images'])
                 if not image_files:
@@ -76,7 +81,7 @@ class AutomationThread(QThread):
                     return
                 self.progress.emit(f"✅ {len(image_files)}개 이미지 다운로드 완료\n")
 
-                # 4. AI 글 생성
+                # AI 글 생성
                 self.progress.emit("🤖 AI 글 생성 중...")
                 ai_result = self.bot.generate_ai_content(product_info)
                 if not ai_result:
@@ -85,10 +90,61 @@ class AutomationThread(QThread):
                 self.progress.emit(f"✅ AI 글 생성 완료 ({len(ai_result['content'])}자)\n")
                 self.progress.emit(f"✅ 태그 {len(ai_result['tags'])}개 생성\n")
 
-            else:
-                # 티스토리만 사용하는 경우 - 간단한 방식으로 정보 수집
-                self.finished.emit(False, "티스토리 단독 사용은 아직 지원하지 않습니다. 네이버를 함께 선택해주세요.")
-                return
+            # 2. 티스토리만 사용하는 경우 (독립 실행) ⭐ 신규
+            elif use_tistory and not use_naver:
+                self.progress.emit("🌐 티스토리 전용 모드 - 브라우저 시작 중...\n")
+
+                # 독립 모듈들 import
+                from selenium import webdriver
+                from selenium.webdriver.chrome.service import Service
+                from selenium.webdriver.chrome.options import Options
+                from webdriver_manager.chrome import ChromeDriverManager
+                from modules.product_extractor import ProductExtractor
+                from modules.image_handler import ImageHandler
+                from modules.ai_generator import AIContentGenerator
+
+                # 브라우저 시작 (네이버 로그인 없이)
+                chrome_options = Options()
+                chrome_options.add_argument('--disable-blink-features=AutomationControlled')
+                chrome_options.add_experimental_option("excludeSwitches", ["enable-automation"])
+                chrome_options.add_experimental_option('useAutomationExtension', False)
+
+                driver = webdriver.Chrome(
+                    service=Service(ChromeDriverManager().install()),
+                    options=chrome_options
+                )
+                driver.maximize_window()
+                self.bot = type('obj', (object,), {'driver': driver, 'close': lambda: driver.quit()})()
+                self.progress.emit("✅ 브라우저 시작 완료\n")
+
+                # 제품 정보 추출
+                self.progress.emit("📦 제품 정보 추출 중...")
+                extractor = ProductExtractor(driver)
+                product_info = extractor.extract_product_info(self.shopping_url)
+                if not product_info:
+                    self.finished.emit(False, "제품 정보 추출 실패")
+                    return
+                self.progress.emit(f"✅ 제품명: {product_info['title'][:50]}...\n")
+
+                # 이미지 다운로드
+                self.progress.emit("💾 이미지 다운로드 중...")
+                img_handler = ImageHandler()
+                image_files = img_handler.download_product_images(product_info['images'])
+                detail_images = img_handler.download_detail_images(product_info.get('detail_images', []))
+                if not image_files:
+                    self.finished.emit(False, "이미지 다운로드 실패 - 최소 1개")
+                    return
+                self.progress.emit(f"✅ {len(image_files)}개 이미지 다운로드 완료\n")
+
+                # AI 글 생성
+                self.progress.emit("🤖 AI 글 생성 중...")
+                ai_gen = AIContentGenerator(self.config['gemini_api_key'])
+                ai_result = ai_gen.generate_content_with_vision(product_info, detail_images)
+                if not ai_result:
+                    self.finished.emit(False, "AI 글 생성 실패")
+                    return
+                self.progress.emit(f"✅ AI 글 생성 완료 ({len(ai_result['content'])}자)\n")
+                self.progress.emit(f"✅ 태그 {len(ai_result['tags'])}개 생성\n")
 
             # 5. 멀티 블로그 포스팅
             self.progress.emit("\n" + "="*50)
@@ -134,7 +190,7 @@ class AutomationThread(QThread):
                 shopping_url=self.shopping_url,
                 naver_writer=naver_writer,
                 tistory_writer=tistory_writer,
-                blog_id=self.config['blog_id']
+                blog_id=self.config.get('blog_id', '')  # 티스토리 단독 시 빈 문자열
             )
 
             # 결과 확인
