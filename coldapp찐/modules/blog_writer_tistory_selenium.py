@@ -124,10 +124,30 @@ class TistorySeleniumWriter:
             self.driver.get("https://www.tistory.com/auth/login")
             time.sleep(2)
 
-            # 카카오 로그인 버튼 클릭
-            kakao_btn = WebDriverWait(self.driver, 10).until(
-                EC.element_to_be_clickable((By.CSS_SELECTOR, "a[href*='kauth.kakao.com']"))
-            )
+            # 카카오 로그인 버튼 클릭 (여러 셀렉터 시도)
+            print("   🔍 카카오 로그인 버튼 찾는 중...")
+            kakao_btn = None
+            kakao_selectors = [
+                (By.CSS_SELECTOR, "a.btn_login.link_kakao_id"),  # 실제 클래스명
+                (By.CSS_SELECTOR, "a.link_kakao_id"),  # 짧은 버전
+                (By.XPATH, "//a[contains(@class, 'link_kakao_id')]"),  # XPath
+                (By.XPATH, "//a[contains(text(), '카카오계정으로 로그인')]"),  # 텍스트
+                (By.CSS_SELECTOR, "a[href*='kauth.kakao.com']"),  # 이전 방식 (백업)
+            ]
+
+            for selector_type, selector_value in kakao_selectors:
+                try:
+                    kakao_btn = WebDriverWait(self.driver, 5).until(
+                        EC.element_to_be_clickable((selector_type, selector_value))
+                    )
+                    print(f"   ✅ 카카오 버튼 찾음: {selector_value}")
+                    break
+                except:
+                    continue
+
+            if not kakao_btn:
+                raise Exception("카카오 로그인 버튼을 찾을 수 없습니다")
+
             kakao_btn.click()
             print("   ✅ 카카오 로그인 페이지 이동 완료")
             time.sleep(3)
