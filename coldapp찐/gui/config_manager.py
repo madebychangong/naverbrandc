@@ -38,7 +38,9 @@ class ConfigManager:
             "naver_pw": "",
             "gemini_api_key": "",
             "last_login_email": "",
-            "tistory_access_token": "",
+            # 티스토리 Selenium 방식 (API 종료됨)
+            "tistory_kakao_email": "",
+            "tistory_kakao_password": "",
             "tistory_blog_name": "",
             "use_naver": True,
             "use_tistory": False

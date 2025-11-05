@@ -18,7 +18,7 @@ from PyQt6.QtGui import QFont, QIcon, QPixmap
 import os
 from naver_blog_automation import NaverBlogAutomation
 from firebase_auth import FirebaseAuthManager
-from modules.blog_writer_tistory import TistoryBlogWriter
+from modules.blog_writer_tistory_selenium import TistorySeleniumWriter
 from modules.multi_blog_manager import MultiBlogManager
 from gui import Colors, NavButton, SolidButton, LineEdit, LogText, ConfigManager, LoginDialog
 
@@ -103,23 +103,28 @@ class AutomationThread(QThread):
                 from modules.blog_writer import BlogWriter
                 naver_writer = BlogWriter(self.bot.driver)
 
-            # 티스토리 작성자 준비
+            # 티스토리 작성자 준비 (Selenium 방식)
             tistory_writer = None
             if use_tistory:
-                tistory_token = self.config.get('tistory_access_token', '').strip()
+                tistory_email = self.config.get('tistory_kakao_email', '').strip()
+                tistory_password = self.config.get('tistory_kakao_password', '').strip()
                 tistory_blog = self.config.get('tistory_blog_name', '').strip()
 
-                if not tistory_token or not tistory_blog:
+                if not tistory_email or not tistory_password or not tistory_blog:
                     self.progress.emit("⚠️ 티스토리 설정이 없어 건너뜁니다\n")
                 else:
-                    tistory_writer = TistoryBlogWriter(tistory_token, tistory_blog)
-                    # 연결 테스트
-                    self.progress.emit("🔗 티스토리 연결 테스트 중...")
-                    if not tistory_writer.test_connection():
-                        self.progress.emit("⚠️ 티스토리 연결 실패 - 건너뜁니다\n")
+                    tistory_writer = TistorySeleniumWriter(
+                        kakao_email=tistory_email,
+                        kakao_password=tistory_password,
+                        blog_name=tistory_blog
+                    )
+                    # 로그인
+                    self.progress.emit("🔗 티스토리 로그인 중...")
+                    if not tistory_writer.login():
+                        self.progress.emit("⚠️ 티스토리 로그인 실패 - 건너뜁니다\n")
                         tistory_writer = None
                     else:
-                        self.progress.emit("✅ 티스토리 연결 성공\n")
+                        self.progress.emit("✅ 티스토리 로그인 성공\n")
 
             # 멀티 블로그 포스팅 실행
             results = multi_manager.post_to_multiple_blogs(
@@ -468,19 +473,34 @@ class MainWindow(QMainWindow):
         tistory_blog_label.setStyleSheet(f"color:{Colors.TEXT_WEAK}; font-size:12px; font-weight:700;")
         tistory_lay.addWidget(tistory_blog_label)
         self.tistory_blog_input = LineEdit("티스토리 블로그 이름")
-        self.tistory_blog_input.setToolTip("티스토리 주소의 앞부분")
+        self.tistory_blog_input.setToolTip("티스토리 주소의 앞부분 (예: myblog)")
         self.tistory_blog_input.setText(self.config.get('tistory_blog_name',''))
         tistory_lay.addWidget(self.tistory_blog_input)
 
-        # Access Token
-        tistory_token_label = QLabel("Access Token (티스토리 OpenAPI에서 발급)")
-        tistory_token_label.setStyleSheet(f"color:{Colors.TEXT_WEAK}; font-size:12px; font-weight:700;")
-        tistory_lay.addWidget(tistory_token_label)
-        self.tistory_token_input = LineEdit("티스토리 Access Token")
-        self.tistory_token_input.setToolTip("티스토리 OpenAPI에서 발급받은 토큰")
-        self.tistory_token_input.setEchoMode(QLineEdit.EchoMode.Password)
-        self.tistory_token_input.setText(self.config.get('tistory_access_token',''))
-        tistory_lay.addWidget(self.tistory_token_input)
+        # 카카오 이메일
+        tistory_email_label = QLabel("카카오 이메일")
+        tistory_email_label.setStyleSheet(f"color:{Colors.TEXT_WEAK}; font-size:12px; font-weight:700;")
+        tistory_lay.addWidget(tistory_email_label)
+        self.tistory_email_input = LineEdit("카카오 이메일")
+        self.tistory_email_input.setToolTip("카카오 계정 이메일 (티스토리 로그인용)")
+        self.tistory_email_input.setText(self.config.get('tistory_kakao_email',''))
+        tistory_lay.addWidget(self.tistory_email_input)
+
+        # 카카오 비밀번호
+        tistory_password_label = QLabel("카카오 비밀번호")
+        tistory_password_label.setStyleSheet(f"color:{Colors.TEXT_WEAK}; font-size:12px; font-weight:700;")
+        tistory_lay.addWidget(tistory_password_label)
+        self.tistory_password_input = LineEdit("카카오 비밀번호")
+        self.tistory_password_input.setToolTip("카카오 계정 비밀번호")
+        self.tistory_password_input.setEchoMode(QLineEdit.EchoMode.Password)
+        self.tistory_password_input.setText(self.config.get('tistory_kakao_password',''))
+        tistory_lay.addWidget(self.tistory_password_input)
+
+        # API 종료 안내
+        api_notice = QLabel("ℹ️ 티스토리 Open API는 2024년 2월에 종료되어 Selenium 방식으로 변경되었습니다.")
+        api_notice.setStyleSheet(f"color:{Colors.ACCENT}; font-size:11px; padding:8px; background:{Colors.BG_STRONG}; border-radius:4px;")
+        api_notice.setWordWrap(True)
+        tistory_lay.addWidget(api_notice)
         layout.addWidget(tistory_group)
 
         # 티스토리 포스팅 활성화
@@ -630,7 +650,8 @@ class MainWindow(QMainWindow):
         current_config['naver_pw'] = self.naver_pw_input.text()
         current_config['gemini_api_key'] = self.gemini_key_input.text().strip()
         current_config['tistory_blog_name'] = self.tistory_blog_input.text().strip()
-        current_config['tistory_access_token'] = self.tistory_token_input.text().strip()
+        current_config['tistory_kakao_email'] = self.tistory_email_input.text().strip()
+        current_config['tistory_kakao_password'] = self.tistory_password_input.text().strip()
         current_config['use_naver'] = self.use_naver_checkbox.isChecked()
         current_config['use_tistory'] = self.use_tistory_checkbox.isChecked()
 
