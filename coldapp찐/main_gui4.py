@@ -454,12 +454,8 @@ class MainWindow(QMainWindow):
         layout.setContentsMargins(0, 0, 0, 0); layout.setSpacing(12)
 
         # 티스토리 설정 안내
-        info_group, info_lay = self.build_group("📘 티스토리 OpenAPI 설정")
-        info_text = QLabel(
-            "티스토리에도 동시 포스팅하려면 아래 정보를 입력하세요.\n"
-            "토큰 발급 방법: python get_tistory_token.py 실행\n"
-            "자세한 가이드는 TISTORY_GUIDE.md 참고"
-        )
+        info_group, info_lay = self.build_group("📘 티스토리 설정")
+        info_text = QLabel("티스토리 가입 후 카카오 계정으로 로그인합니다.")
         info_text.setStyleSheet(f"color:{Colors.TEXT_WEAK}; font-size:12px; line-height:1.6;")
         info_text.setWordWrap(True)
         info_lay.addWidget(info_text)
@@ -482,7 +478,7 @@ class MainWindow(QMainWindow):
         tistory_email_label.setStyleSheet(f"color:{Colors.TEXT_WEAK}; font-size:12px; font-weight:700;")
         tistory_lay.addWidget(tistory_email_label)
         self.tistory_email_input = LineEdit("카카오 이메일")
-        self.tistory_email_input.setToolTip("카카오 계정 이메일 (티스토리 로그인용)")
+        self.tistory_email_input.setToolTip("카카오 계정 이메일")
         self.tistory_email_input.setText(self.config.get('tistory_kakao_email',''))
         tistory_lay.addWidget(self.tistory_email_input)
 
@@ -497,7 +493,7 @@ class MainWindow(QMainWindow):
         tistory_lay.addWidget(self.tistory_password_input)
 
         # API 종료 안내
-        api_notice = QLabel("ℹ️ 티스토리 Open API는 2024년 2월에 종료되어 Selenium 방식으로 변경되었습니다.")
+        api_notice = QLabel("ℹ️ OPEN AI 설정은 네이버 설정에 있습니다.")
         api_notice.setStyleSheet(f"color:{Colors.PRIMARY}; font-size:11px; padding:8px; background:{Colors.BG}; border:1px solid {Colors.DIVIDER}; border-radius:4px;")
         api_notice.setWordWrap(True)
         tistory_lay.addWidget(api_notice)
