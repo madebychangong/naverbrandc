@@ -90,44 +90,39 @@ class AutomationThread(QThread):
                 self.progress.emit(f"✅ AI 글 생성 완료 ({len(ai_result['content'])}자)\n")
                 self.progress.emit(f"✅ 태그 {len(ai_result['tags'])}개 생성\n")
 
-            # 2. 티스토리만 사용하는 경우 (독립 실행) ⭐ 수정: 로그인 먼저!
+            # 2. 티스토리만 사용하는 경우 (독립 실행) ⭐ 순서: 제품정보 → 로그인
             elif use_tistory and not use_naver:
                 self.progress.emit("🌐 티스토리 전용 모드 시작\n")
 
                 # 독립 모듈들 import
+                from selenium import webdriver
+                from selenium.webdriver.chrome.service import Service
+                from selenium.webdriver.chrome.options import Options
+                from webdriver_manager.chrome import ChromeDriverManager
                 from modules.product_extractor import ProductExtractor
                 from modules.image_handler import ImageHandler
                 from modules.ai_generator import AIContentGenerator
 
-                # 1. 티스토리 로그인 먼저! (네이버처럼)
-                tistory_email = self.config.get('tistory_kakao_email', '').strip()
-                tistory_password = self.config.get('tistory_kakao_password', '').strip()
-                tistory_blog = self.config.get('tistory_blog_name', '').strip()
+                # 1. 브라우저 시작 (제품 정보 추출용)
+                self.progress.emit("🌐 브라우저 시작 중...")
+                chrome_options = Options()
+                chrome_options.add_argument('--disable-blink-features=AutomationControlled')
+                chrome_options.add_experimental_option("excludeSwitches", ["enable-automation"])
+                chrome_options.add_experimental_option('useAutomationExtension', False)
 
-                if not tistory_email or not tistory_password or not tistory_blog:
-                    self.finished.emit(False, "티스토리 설정 정보가 없습니다")
-                    return
-
-                self.progress.emit("🔐 티스토리 로그인 중...")
-                tistory_writer = TistorySeleniumWriter(
-                    kakao_email=tistory_email,
-                    kakao_password=tistory_password,
-                    blog_name=tistory_blog
+                driver = webdriver.Chrome(
+                    service=Service(ChromeDriverManager().install()),
+                    options=chrome_options
                 )
+                driver.maximize_window()
+                self.progress.emit("✅ 브라우저 시작 완료\n")
 
-                if not tistory_writer.login():
-                    self.finished.emit(False, "티스토리 로그인 실패")
-                    return
-                self.progress.emit("✅ 티스토리 로그인 완료\n")
-
-                # bot 객체 설정 (finally에서 close하기 위해)
-                self.bot = tistory_writer
-
-                # 2. 같은 브라우저로 제품 정보 추출
+                # 2. 제품 정보 추출
                 self.progress.emit("📦 제품 정보 추출 중...")
-                extractor = ProductExtractor(tistory_writer.driver)  # 같은 드라이버 사용!
+                extractor = ProductExtractor(driver)
                 product_info = extractor.extract_product_info(self.shopping_url)
                 if not product_info:
+                    driver.quit()
                     self.finished.emit(False, "제품 정보 추출 실패")
                     return
                 self.progress.emit(f"✅ 제품명: {product_info['title'][:50]}...\n")
@@ -138,6 +133,7 @@ class AutomationThread(QThread):
                 image_files = img_handler.download_product_images(product_info['images'])
                 detail_images = img_handler.download_detail_images(product_info.get('detail_images', []))
                 if not image_files:
+                    driver.quit()
                     self.finished.emit(False, "이미지 다운로드 실패 - 최소 1개")
                     return
                 self.progress.emit(f"✅ {len(image_files)}개 이미지 다운로드 완료\n")
@@ -147,10 +143,19 @@ class AutomationThread(QThread):
                 ai_gen = AIContentGenerator(self.config['gemini_api_key'])
                 ai_result = ai_gen.generate_content_with_vision(product_info, detail_images)
                 if not ai_result:
+                    driver.quit()
                     self.finished.emit(False, "AI 글 생성 실패")
                     return
                 self.progress.emit(f"✅ AI 글 생성 완료 ({len(ai_result['content'])}자)\n")
                 self.progress.emit(f"✅ 태그 {len(ai_result['tags'])}개 생성\n")
+
+                # 5. 제품 정보 브라우저 종료 (메모리 절약)
+                driver.quit()
+                self.progress.emit("✅ 제품 정보 브라우저 종료\n")
+
+                # 6. 티스토리 로그인은 나중에 (멀티 블로그 매니저에서)
+                # bot 객체는 None으로 설정
+                self.bot = None
 
             # 5. 멀티 블로그 포스팅
             self.progress.emit("\n" + "="*50)
@@ -166,35 +171,30 @@ class AutomationThread(QThread):
                 naver_writer = BlogWriter(self.bot.driver)
 
             # 티스토리 작성자 준비 (Selenium 방식)
-            # 주의: 티스토리 단독 모드에서는 이미 tistory_writer가 생성되어 있음!
-            if use_tistory and use_naver:
-                # 네이버+티스토리 동시 모드: 새로 생성
+            tistory_writer = None
+            if use_tistory:
                 tistory_email = self.config.get('tistory_kakao_email', '').strip()
                 tistory_password = self.config.get('tistory_kakao_password', '').strip()
                 tistory_blog = self.config.get('tistory_blog_name', '').strip()
 
                 if not tistory_email or not tistory_password or not tistory_blog:
                     self.progress.emit("⚠️ 티스토리 설정이 없어 건너뜁니다\n")
-                    tistory_writer = None
                 else:
+                    # 티스토리 로그인 (제품 정보 추출 후)
+                    self.progress.emit("🔗 티스토리 로그인 중...")
                     tistory_writer = TistorySeleniumWriter(
                         kakao_email=tistory_email,
                         kakao_password=tistory_password,
                         blog_name=tistory_blog
                     )
-                    # 로그인
-                    self.progress.emit("🔗 티스토리 로그인 중...")
                     if not tistory_writer.login():
                         self.progress.emit("⚠️ 티스토리 로그인 실패 - 건너뜁니다\n")
                         tistory_writer = None
                     else:
                         self.progress.emit("✅ 티스토리 로그인 성공\n")
-            elif use_tistory and not use_naver:
-                # 티스토리 단독 모드: 이미 생성됨, 재사용
-                self.progress.emit("✅ 티스토리 writer 재사용\n")
-                # tistory_writer는 이미 위에서 생성되어 있음
-            else:
-                tistory_writer = None
+                        # 티스토리 단독 모드: bot 객체 설정 (cleanup용)
+                        if not use_naver:
+                            self.bot = tistory_writer
 
             # 멀티 블로그 포스팅 실행
             results = multi_manager.post_to_multiple_blogs(
