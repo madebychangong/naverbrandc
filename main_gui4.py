@@ -89,8 +89,8 @@ class AutomationThread(QThread):
                         continue
                     self.progress.emit(f"✅ {len(image_files)}개 이미지 다운로드 완료\n")
 
-                    self.progress.emit("🤖 AI 글 생성 중...")
-                    ai_result = self.bot.generate_ai_content(product_info)
+                    self.progress.emit("🤖 AI 글 생성 중 (이미지 분석 포함)...")
+                    ai_result = self.bot.generate_ai_content(product_info, image_files)
                     if not ai_result:
                         self.progress.emit(f"❌ [{idx}/{total_urls}] AI 글 생성 실패\n")
                         fail_count += 1
