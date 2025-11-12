@@ -558,7 +558,7 @@ class NaverBlogAutomation:
             driver_executable_path=None,
             port=driver_port
         )
-        print(f"✅ 브라우저 시작 완료 (PID: {process_id}, Port: {driver_port}, 독립 프로필)")
+        print(f"✅ 브라우저 시작 완료 (프로필: {self.chrome_profile_name}, Port: {driver_port})")
     
     def save_cookies(self):
         """쿠키 저장"""
