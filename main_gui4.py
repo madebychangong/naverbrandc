@@ -37,6 +37,7 @@ class Colors:
 class AutomationThread(QThread):
     progress = pyqtSignal(str)
     finished = pyqtSignal(bool, str)
+    url_completed = pyqtSignal(str)  # 완료된 URL을 전달
 
     def __init__(self, config, shopping_urls):
         super().__init__()
@@ -77,6 +78,7 @@ class AutomationThread(QThread):
                     product_info = self.bot.extract_product_info(shopping_url)
                     if not product_info:
                         self.progress.emit(f"❌ [{idx}/{total_urls}] 제품 정보 추출 실패\n")
+                        self.url_completed.emit(shopping_url)  # 실패해도 목록에서 제거
                         fail_count += 1
                         continue
                     self.progress.emit(f"✅ 제품명: {product_info['title'][:50]}...\n")
@@ -85,6 +87,7 @@ class AutomationThread(QThread):
                     image_files = self.bot.download_images(product_info['images'])
                     if not image_files:
                         self.progress.emit(f"❌ [{idx}/{total_urls}] 이미지 다운로드 실패\n")
+                        self.url_completed.emit(shopping_url)  # 실패해도 목록에서 제거
                         fail_count += 1
                         continue
                     self.progress.emit(f"✅ {len(image_files)}개 이미지 다운로드 완료\n")
@@ -93,6 +96,7 @@ class AutomationThread(QThread):
                     ai_result = self.bot.generate_ai_content(product_info, image_files)
                     if not ai_result:
                         self.progress.emit(f"❌ [{idx}/{total_urls}] AI 글 생성 실패\n")
+                        self.url_completed.emit(shopping_url)  # 실패해도 목록에서 제거
                         fail_count += 1
                         continue
                     self.progress.emit(f"✅ AI 글 생성 완료 ({len(ai_result['content'])}자)\n")
@@ -106,8 +110,12 @@ class AutomationThread(QThread):
                         self.progress.emit(f"❌ [{idx}/{total_urls}] 블로그 글 작성 실패\n")
                         fail_count += 1
 
+                    # 성공/실패 여부와 관계없이 목록에서 제거
+                    self.url_completed.emit(shopping_url)
+
                 except Exception as e:
                     self.progress.emit(f"❌ [{idx}/{total_urls}] 오류 발생: {str(e)}\n")
+                    self.url_completed.emit(shopping_url)  # 오류 발생해도 목록에서 제거
                     fail_count += 1
                     continue
 
@@ -828,6 +836,7 @@ class MainWindow(QMainWindow):
         self.thread = AutomationThread(cfg, urls)  # 여러 URL을 리스트로 전달
         self.thread.progress.connect(self.update_progress)
         self.thread.finished.connect(self.automation_finished)
+        self.thread.url_completed.connect(self.remove_completed_url)  # URL 완료 시 목록에서 제거
         self.thread.start()
 
     def stop_automation(self):
@@ -837,6 +846,14 @@ class MainWindow(QMainWindow):
 
     def update_progress(self, msg: str):
         self.progress_text.append(msg)
+
+    def remove_completed_url(self, completed_url: str):
+        """완료된 URL을 입력 목록에서 제거"""
+        current_text = self.url_input.toPlainText()
+        lines = current_text.split('\n')
+        # 완료된 URL을 제외한 나머지 URL만 남김
+        remaining_lines = [line for line in lines if line.strip() != completed_url.strip()]
+        self.url_input.setPlainText('\n'.join(remaining_lines))
 
     def automation_finished(self, success: bool, message: str):
         self.start_btn.setEnabled(True)
