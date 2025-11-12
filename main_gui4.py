@@ -131,9 +131,100 @@ class AutomationThread(QThread):
                 self.bot.close()
 
 
+class ProfileSelectDialog(QDialog):
+    """프로필 선택 다이얼로그 (다중 프로그램 실행 시 세션 분리용)"""
+
+    def __init__(self):
+        super().__init__()
+        self.selected_profile = None
+        self.init_ui()
+
+    def init_ui(self):
+        self.setWindowTitle("ColdAPP - 프로필 선택")
+        self.setFixedSize(450, 300)
+        self.setStyleSheet(f"background: {Colors.BG};")
+
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(30, 30, 30, 30)
+        layout.setSpacing(20)
+
+        # 타이틀
+        title = QLabel("🌐 프로필 선택")
+        title.setStyleSheet(f"font-size: 24px; font-weight: bold; color: {Colors.TEXT};")
+        title.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        layout.addWidget(title)
+
+        # 설명
+        desc = QLabel("프로그램을 2개 이상 동시 실행할 때\n각각 다른 프로필 이름을 입력하세요.")
+        desc.setStyleSheet(f"font-size: 13px; color: {Colors.TEXT_WEAK};")
+        desc.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        layout.addWidget(desc)
+
+        layout.addSpacing(10)
+
+        # 프로필 이름 입력
+        profile_label = QLabel("프로필 이름:")
+        profile_label.setStyleSheet(f"font-size: 13px; color: {Colors.TEXT}; font-weight: bold;")
+        layout.addWidget(profile_label)
+
+        self.profile_input = QLineEdit()
+        self.profile_input.setPlaceholderText("예: profile1, profile2, 계정1, 계정2")
+        self.profile_input.setStyleSheet(f"""
+            QLineEdit {{
+                padding: 12px;
+                border: 2px solid {Colors.DIVIDER};
+                border-radius: 8px;
+                background: {Colors.SURFACE};
+                color: {Colors.TEXT};
+                font-size: 14px;
+            }}
+            QLineEdit:focus {{
+                border-color: {Colors.PRIMARY};
+            }}
+        """)
+        self.profile_input.setText("profile1")  # 기본값
+        layout.addWidget(self.profile_input)
+
+        # 힌트
+        hint = QLabel("💡 프로그램 1개만 사용한다면 기본값(profile1)을 사용하세요.")
+        hint.setStyleSheet(f"font-size: 11px; color: {Colors.TEXT_WEAK}; padding: 5px;")
+        hint.setWordWrap(True)
+        layout.addWidget(hint)
+
+        layout.addStretch()
+
+        # 확인 버튼
+        ok_btn = QPushButton("확인")
+        ok_btn.setFixedHeight(45)
+        ok_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        ok_btn.setStyleSheet(f"""
+            QPushButton {{
+                background: {Colors.PRIMARY};
+                color: white;
+                border: none;
+                border-radius: 8px;
+                font-size: 14px;
+                font-weight: bold;
+            }}
+            QPushButton:hover {{
+                background: {Colors.PRIMARY_DARK};
+            }}
+        """)
+        ok_btn.clicked.connect(self.accept_profile)
+        layout.addWidget(ok_btn)
+
+    def accept_profile(self):
+        profile_name = self.profile_input.text().strip()
+        if not profile_name:
+            QMessageBox.warning(self, "입력 오류", "프로필 이름을 입력하세요.")
+            return
+        self.selected_profile = profile_name
+        self.accept()
+
+
 class LoginDialog(QDialog):
     """Firebase 로그인 다이얼로그"""
-    
+
     def __init__(self, auth_manager):
         super().__init__()
         self.auth_manager = auth_manager
@@ -353,10 +444,20 @@ class LoginDialog(QDialog):
 class ConfigManager:
     """
     ColdAPP 설정 및 로그인 이메일 저장 관리자
-    AppData\Roaming\ColdAPP\config.json 에 저장
+    프로필별로 다른 설정 파일 사용 (config_profile1.json, config_profile2.json 등)
     """
     CONFIG_DIR = os.path.join(os.getenv("APPDATA"), "ColdAPP")
-    CONFIG_FILE = os.path.join(CONFIG_DIR, "config.json")
+    current_profile = "default"  # 현재 사용 중인 프로필 이름
+
+    @staticmethod
+    def set_profile(profile_name: str):
+        """현재 프로필 설정"""
+        ConfigManager.current_profile = profile_name
+
+    @staticmethod
+    def get_config_file():
+        """현재 프로필의 설정 파일 경로 반환"""
+        return os.path.join(ConfigManager.CONFIG_DIR, f"config_{ConfigManager.current_profile}.json")
 
     @staticmethod
     def ensure_dir():
@@ -368,19 +469,20 @@ class ConfigManager:
     def load():
         """설정 파일 불러오기"""
         ConfigManager.ensure_dir()
-        if os.path.exists(ConfigManager.CONFIG_FILE):
+        config_file = ConfigManager.get_config_file()
+        if os.path.exists(config_file):
             try:
-                with open(ConfigManager.CONFIG_FILE, 'r', encoding='utf-8') as f:
+                with open(config_file, 'r', encoding='utf-8') as f:
                     return json.load(f)
             except:
                 pass
-        # 기본 구조 반환
+        # 기본 구조 반환 (프로필 이름도 자동 설정)
         return {
             "blog_id": "",
             "naver_id": "",
             "naver_pw": "",
             "gemini_api_key": "",
-            "chrome_profile_name": "default",
+            "chrome_profile_name": ConfigManager.current_profile,
             "last_login_email": ""
         }
 
@@ -388,7 +490,8 @@ class ConfigManager:
     def save(config):
         """설정 파일 저장"""
         ConfigManager.ensure_dir()
-        with open(ConfigManager.CONFIG_FILE, 'w', encoding='utf-8') as f:
+        config_file = ConfigManager.get_config_file()
+        with open(config_file, 'w', encoding='utf-8') as f:
             json.dump(config, f, indent=2, ensure_ascii=False)
 
     @staticmethod
@@ -754,18 +857,28 @@ class MainWindow(QMainWindow):
         layout.addWidget(api_group)
 
         # Chrome 프로필 설정 추가 (다중 프로그램 실행 시 세션 격리용)
-        profile_group, profile_lay = self.build_group("🌐 Chrome 프로필 (다중 실행 시 필수)")
-        profile_hint = QLabel("프로그램을 2개 이상 동시에 실행할 때, 각각 다른 이름을 입력하세요.\n예: 첫 번째 프로그램 = profile1, 두 번째 프로그램 = profile2")
+        profile_group, profile_lay = self.build_group("🌐 Chrome 프로필 정보")
+        profile_hint = QLabel("프로필은 프로그램 시작 시 선택하며, 여기서는 확인만 가능합니다.\n프로필을 변경하려면 프로그램을 다시 시작하세요.")
         profile_hint.setStyleSheet(f"color:{Colors.TEXT_WEAK}; font-size:12px;")
         profile_lay.addWidget(profile_hint)
 
-        profile_label = QLabel("프로필 이름")
+        profile_label = QLabel("현재 프로필 이름 (읽기 전용)")
         profile_label.setStyleSheet(f"color:{Colors.TEXT_WEAK}; font-size:12px; font-weight:700;")
         profile_lay.addWidget(profile_label)
 
-        self.profile_name_input = LineEdit("예: profile1")
-        self.profile_name_input.setToolTip("프로그램마다 고유한 프로필 이름 (예: profile1, profile2)")
+        self.profile_name_input = LineEdit()
+        self.profile_name_input.setReadOnly(True)
         self.profile_name_input.setText(self.config.get('chrome_profile_name', 'default'))
+        self.profile_name_input.setStyleSheet(f"""
+            QLineEdit {{
+                padding: 10px;
+                border: 1px solid {Colors.DIVIDER};
+                border-radius: 8px;
+                background: {Colors.DIVIDER};
+                color: {Colors.TEXT_WEAK};
+                font-size: 13px;
+            }}
+        """)
         profile_lay.addWidget(self.profile_name_input)
         layout.addWidget(profile_group)
 
@@ -905,7 +1018,7 @@ class MainWindow(QMainWindow):
         current_config['naver_id'] = self.naver_id_input.text().strip()
         current_config['naver_pw'] = self.naver_pw_input.text()
         current_config['gemini_api_key'] = self.gemini_key_input.text().strip()
-        current_config['chrome_profile_name'] = self.profile_name_input.text().strip() or 'default'
+        # chrome_profile_name은 시작 시 자동 설정되므로 여기서 변경하지 않음
 
         # 3. 업데이트된 전체 설정을 저장합니다.
         ConfigManager.save(current_config)
@@ -922,16 +1035,26 @@ def main():
             ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID(myappid)
         except:
             pass
-    
+
     app = QApplication(sys.argv)
     app.setFont(QFont("맑은 고딕", 10))
-    
-    # Firebase 인증 매니저 초기화
+
+    # 1단계: 프로필 선택 다이얼로그 표시
+    profile_dialog = ProfileSelectDialog()
+    if profile_dialog.exec() != QDialog.DialogCode.Accepted:
+        sys.exit(0)
+
+    # 선택한 프로필 이름으로 ConfigManager 설정
+    profile_name = profile_dialog.selected_profile
+    ConfigManager.set_profile(profile_name)
+    print(f"✅ 선택한 프로필: {profile_name}")
+
+    # 2단계: Firebase 인증 매니저 초기화
     auth_manager = FirebaseAuthManager()
-    
-    # 로그인 다이얼로그 표시
+
+    # 3단계: 로그인 다이얼로그 표시
     login_dialog = LoginDialog(auth_manager)
-    
+
     if login_dialog.exec() == QDialog.DialogCode.Accepted:
         user_info = login_dialog.user_info
         w = MainWindow(user_info)
