@@ -964,7 +964,8 @@ class MainWindow(QMainWindow):
             'blog_id': self.blog_id_input.text().strip(),
             'naver_id': self.naver_id_input.text().strip(),
             'naver_pw': self.naver_pw_input.text(),
-            'gemini_api_key': self.gemini_key_input.text().strip()
+            'gemini_api_key': self.gemini_key_input.text().strip(),
+            'chrome_profile_name': self.config['chrome_profile_name']
         }
         self.thread = AutomationThread(cfg, urls)  # 여러 URL을 리스트로 전달
         self.thread.progress.connect(self.update_progress)
