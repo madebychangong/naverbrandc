@@ -20,19 +20,24 @@ import random
 class NaverBlogAutomation:
     """네이버 블로그 자동화 클래스"""
     
-    def __init__(self, blog_id, naver_id, naver_pw, gemini_api_key):
+    def __init__(self, blog_id, naver_id, naver_pw, gemini_api_key, chrome_profile_name='default'):
         self.blog_id = blog_id
         self.naver_id = naver_id
         self.naver_pw = naver_pw
         self.gemini_api_key = gemini_api_key
+        self.chrome_profile_name = chrome_profile_name
         self.driver = None
-        self.temp_images_dir = os.path.join(os.getcwd(), 'temp_images')
-        # 쿠키 파일 경로 (AppData에 숨김 저장)
+
+        # temp_images 폴더도 프로세스 ID로 분리 (다중 프로그램 실행 시 충돌 방지)
+        process_id = os.getpid()
+        self.temp_images_dir = os.path.join(os.getcwd(), f'temp_images_{process_id}')
+
+        # 쿠키 파일 경로 (AppData에 숨김 저장) - 프로필별로 분리
         config_dir = os.path.join(os.getenv('APPDATA'), 'ColdAPP')
         if not os.path.exists(config_dir):
             os.makedirs(config_dir, exist_ok=True)
-        self.cookies_file = os.path.join(config_dir, 'naver_cookies.json')
-        
+        self.cookies_file = os.path.join(config_dir, f'naver_cookies_{chrome_profile_name}.json')
+
         # temp_images 폴더 생성
         if not os.path.exists(self.temp_images_dir):
             os.makedirs(self.temp_images_dir)
@@ -514,23 +519,19 @@ class NaverBlogAutomation:
         """브라우저 시작 (다중 프로세스 지원 - 완전한 프로필 격리)"""
         print("🌐 Chrome 브라우저 시작...")
 
-        # 프로세스 ID로 프로필 분리 (다중 프로그램 실행 시 충돌 방지)
+        # 설정에서 지정한 프로필 이름 사용 (프로그램마다 다른 이름 지정 필수)
         import os
         import random
-        import time
-        process_id = os.getpid()
-
-        # 현재 시간 기반 고유 식별자 추가 (동시 실행 시 더욱 안전한 격리)
-        unique_id = f"{process_id}_{int(time.time() * 1000)}"
 
         # 프로젝트 폴더 내에 chrome_profiles 폴더 생성
         profiles_base = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'chrome_profiles')
         if not os.path.exists(profiles_base):
             os.makedirs(profiles_base)
 
-        # 프로세스별 완전히 독립적인 사용자 데이터 디렉토리
-        user_data_dir = os.path.join(profiles_base, f'profile_{unique_id}')
+        # 설정된 프로필 이름으로 완전히 독립적인 사용자 데이터 디렉토리
+        user_data_dir = os.path.join(profiles_base, self.chrome_profile_name)
 
+        print(f"   📁 프로필 이름: {self.chrome_profile_name}")
         print(f"   📁 프로필 경로: {user_data_dir}")
 
         options = uc.ChromeOptions()
@@ -2311,10 +2312,11 @@ def main():
     naver_id = input("🔐 네이버 ID: ").strip()
     naver_pw = input("🔑 네이버 PW: ").strip()
     gemini_api_key = input("🤖 Gemini API Key: ").strip()
+    chrome_profile = input("🌐 Chrome 프로필 이름 (default): ").strip() or 'default'
     shopping_url = input("🛒 쇼핑 URL (naver.me): ").strip()
-    
+
     # 자동화 시작
-    bot = NaverBlogAutomation(blog_id, naver_id, naver_pw, gemini_api_key)
+    bot = NaverBlogAutomation(blog_id, naver_id, naver_pw, gemini_api_key, chrome_profile)
     
     try:
         # 1. 브라우저 시작

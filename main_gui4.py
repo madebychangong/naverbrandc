@@ -56,7 +56,8 @@ class AutomationThread(QThread):
                 self.config['blog_id'],
                 self.config['naver_id'],
                 self.config['naver_pw'],
-                self.config['gemini_api_key']
+                self.config['gemini_api_key'],
+                self.config.get('chrome_profile_name', 'default')
             )
             self.bot.start_browser()
             self.progress.emit("✅ 브라우저 시작 완료\n")
@@ -379,6 +380,7 @@ class ConfigManager:
             "naver_id": "",
             "naver_pw": "",
             "gemini_api_key": "",
+            "chrome_profile_name": "default",
             "last_login_email": ""
         }
 
@@ -751,6 +753,22 @@ class MainWindow(QMainWindow):
         api_lay.addWidget(self.gemini_key_input)
         layout.addWidget(api_group)
 
+        # Chrome 프로필 설정 추가 (다중 프로그램 실행 시 세션 격리용)
+        profile_group, profile_lay = self.build_group("🌐 Chrome 프로필 (다중 실행 시 필수)")
+        profile_hint = QLabel("프로그램을 2개 이상 동시에 실행할 때, 각각 다른 이름을 입력하세요.\n예: 첫 번째 프로그램 = profile1, 두 번째 프로그램 = profile2")
+        profile_hint.setStyleSheet(f"color:{Colors.TEXT_WEAK}; font-size:12px;")
+        profile_lay.addWidget(profile_hint)
+
+        profile_label = QLabel("프로필 이름")
+        profile_label.setStyleSheet(f"color:{Colors.TEXT_WEAK}; font-size:12px; font-weight:700;")
+        profile_lay.addWidget(profile_label)
+
+        self.profile_name_input = LineEdit("예: profile1")
+        self.profile_name_input.setToolTip("프로그램마다 고유한 프로필 이름 (예: profile1, profile2)")
+        self.profile_name_input.setText(self.config.get('chrome_profile_name', 'default'))
+        profile_lay.addWidget(self.profile_name_input)
+        layout.addWidget(profile_group)
+
         save_bar = QWidget(); save_bar.setStyleSheet(f"background:{Colors.SURFACE}; border:none; border-radius:12px;")
         hb = QHBoxLayout(save_bar); hb.setContentsMargins(12,10,12,10)
         hb.addStretch(); save_btn = SolidButton("설정 저장", color=Colors.SUCCESS); hb.addWidget(save_btn)
@@ -881,13 +899,14 @@ class MainWindow(QMainWindow):
     def save_settings(self):
         # 1. 기존 설정을 불러옵니다.
         current_config = ConfigManager.load()
-        
+
         # 2. UI의 값으로 설정을 업데이트합니다.
         current_config['blog_id'] = self.blog_id_input.text().strip()
         current_config['naver_id'] = self.naver_id_input.text().strip()
         current_config['naver_pw'] = self.naver_pw_input.text()
         current_config['gemini_api_key'] = self.gemini_key_input.text().strip()
-        
+        current_config['chrome_profile_name'] = self.profile_name_input.text().strip() or 'default'
+
         # 3. 업데이트된 전체 설정을 저장합니다.
         ConfigManager.save(current_config)
         QMessageBox.information(self, "저장 완료", "설정이 저장되었습니다! ✅")
