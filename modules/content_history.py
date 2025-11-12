@@ -3,12 +3,14 @@
 - 작성된 글의 메타데이터 저장
 - 카테고리별 접근 각도 분석
 - 차별화 전략 제안
+- 다중 프로세스 지원 (파일 잠금 처리)
 """
 
 import os
 import json
 from datetime import datetime
 import re
+import time
 
 
 class ContentHistoryManager:
@@ -139,55 +141,75 @@ class ContentHistoryManager:
 
     def save_history(self, product_title, content, approach_angle=None):
         """
-        글 작성 히스토리 저장
+        글 작성 히스토리 저장 (파일 잠금 처리)
 
         Args:
             product_title: 제품명
             content: 작성된 글 내용
             approach_angle: 사용된 접근 각도 (None이면 자동 감지)
         """
-        try:
-            # 기존 히스토리 로드
-            history = self.load_history()
+        max_retries = 5
+        retry_delay = 0.5  # 0.5초
 
-            # 카테고리 자동 분류
-            category = self.classify_category(product_title)
+        for attempt in range(max_retries):
+            try:
+                # 기존 히스토리 로드 (재시도 포함)
+                history = self.load_history()
 
-            # 접근 각도 감지 (제공되지 않은 경우)
-            if approach_angle is None:
-                detected_approaches = self.detect_approach_angle(content)
-                approach_angle = detected_approaches[0] if detected_approaches else "일반"
+                # 카테고리 자동 분류
+                category = self.classify_category(product_title)
 
-            # 주요 키워드 추출
-            key_points = self.extract_key_points(content)
+                # 접근 각도 감지 (제공되지 않은 경우)
+                if approach_angle is None:
+                    detected_approaches = self.detect_approach_angle(content)
+                    approach_angle = detected_approaches[0] if detected_approaches else "일반"
 
-            # 새 항목 추가
-            new_entry = {
-                'timestamp': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
-                'product_title': product_title[:100],  # 최대 100자
-                'category': category,
-                'approach_angle': approach_angle,
-                'key_points': key_points
-            }
+                # 주요 키워드 추출
+                key_points = self.extract_key_points(content)
 
-            history['entries'].append(new_entry)
+                # 새 항목 추가
+                new_entry = {
+                    'timestamp': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
+                    'product_title': product_title[:100],  # 최대 100자
+                    'category': category,
+                    'approach_angle': approach_angle,
+                    'key_points': key_points
+                }
 
-            # 최대 50개만 유지 (오래된 것부터 삭제)
-            if len(history['entries']) > 50:
-                history['entries'] = history['entries'][-50:]
+                history['entries'].append(new_entry)
 
-            # 저장
-            with open(self.history_file, 'w', encoding='utf-8') as f:
-                json.dump(history, f, indent=2, ensure_ascii=False)
+                # 최대 50개만 유지 (오래된 것부터 삭제)
+                if len(history['entries']) > 50:
+                    history['entries'] = history['entries'][-50:]
 
-            print(f"   ✅ 히스토리 저장: {category} - {approach_angle}")
+                # 파일 잠금과 함께 저장
+                import msvcrt
+                with open(self.history_file, 'w', encoding='utf-8') as f:
+                    # 파일 잠금 시도
+                    try:
+                        msvcrt.locking(f.fileno(), msvcrt.LK_NBLCK, 1)
+                        json.dump(history, f, indent=2, ensure_ascii=False)
+                        msvcrt.locking(f.fileno(), msvcrt.LK_UNLCK, 1)
+                        print(f"   ✅ 히스토리 저장: {category} - {approach_angle}")
+                        return
+                    except IOError:
+                        # 파일이 잠겨있으면 재시도
+                        if attempt < max_retries - 1:
+                            time.sleep(retry_delay)
+                            continue
+                        else:
+                            raise
 
-        except Exception as e:
-            print(f"   ⚠️ 히스토리 저장 실패: {e}")
+            except Exception as e:
+                if attempt < max_retries - 1:
+                    time.sleep(retry_delay)
+                    continue
+                else:
+                    print(f"   ⚠️ 히스토리 저장 실패 (무시): {e}")
 
     def load_history(self):
         """
-        히스토리 로드
+        히스토리 로드 (파일 잠금 처리)
 
         Returns:
             dict: 히스토리 데이터
@@ -195,12 +217,35 @@ class ContentHistoryManager:
         if not os.path.exists(self.history_file):
             return {'entries': []}
 
-        try:
-            with open(self.history_file, 'r', encoding='utf-8') as f:
-                return json.load(f)
-        except Exception as e:
-            print(f"   ⚠️ 히스토리 로드 실패: {e}")
-            return {'entries': []}
+        max_retries = 5
+        retry_delay = 0.3  # 0.3초
+
+        for attempt in range(max_retries):
+            try:
+                import msvcrt
+                with open(self.history_file, 'r', encoding='utf-8') as f:
+                    try:
+                        # 공유 잠금 (읽기 전용)
+                        msvcrt.locking(f.fileno(), msvcrt.LK_NBLCK, 1)
+                        data = json.load(f)
+                        msvcrt.locking(f.fileno(), msvcrt.LK_UNLCK, 1)
+                        return data
+                    except IOError:
+                        # 파일이 잠겨있으면 재시도
+                        if attempt < max_retries - 1:
+                            time.sleep(retry_delay)
+                            continue
+                        else:
+                            # 최종 실패 시 잠금 없이 읽기 시도
+                            f.seek(0)
+                            return json.load(f)
+            except Exception as e:
+                if attempt < max_retries - 1:
+                    time.sleep(retry_delay)
+                    continue
+                else:
+                    print(f"   ⚠️ 히스토리 로드 실패: {e}")
+                    return {'entries': []}
 
     def get_recent_by_category(self, category, limit=5):
         """

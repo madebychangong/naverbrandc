@@ -511,14 +511,33 @@ class NaverBlogAutomation:
             ActionChains(self.driver).key_down(Keys.CONTROL).send_keys('v').key_up(Keys.CONTROL).perform()
 
     def start_browser(self):
-        """브라우저 시작"""
+        """브라우저 시작 (다중 프로세스 지원)"""
         print("🌐 Chrome 브라우저 시작...")
+
+        # 프로세스 ID로 프로필 분리 (다중 프로그램 실행 시 충돌 방지)
+        import os
+        import tempfile
+        process_id = os.getpid()
+
+        # 프로세스별 사용자 데이터 디렉토리
+        user_data_dir = os.path.join(tempfile.gettempdir(), f'chrome_profile_{process_id}')
+
         options = uc.ChromeOptions()
         options.add_argument('--disable-blink-features=AutomationControlled')
         options.add_argument('--start-maximized')
-        
-        self.driver = uc.Chrome(options=options, version_main=141)
-        print("✅ 브라우저 시작 완료")
+        options.add_argument(f'--user-data-dir={user_data_dir}')
+
+        # 포트 충돌 방지를 위해 랜덤 포트 사용
+        import random
+        driver_port = random.randint(9000, 9999)
+
+        self.driver = uc.Chrome(
+            options=options,
+            version_main=141,
+            driver_executable_path=None,
+            port=driver_port
+        )
+        print(f"✅ 브라우저 시작 완료 (PID: {process_id}, Port: {driver_port})")
     
     def save_cookies(self):
         """쿠키 저장"""

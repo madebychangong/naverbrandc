@@ -3,6 +3,7 @@
 - 이미지 다운로드 (상품 이미지 + 상세 설명 이미지)
 - base64 인코딩 (Gemini Vision API용)
 - 이미지 파일 관리
+- 다중 프로세스 지원 (프로세스 ID별로 폴더 분리)
 """
 
 import os
@@ -12,16 +13,22 @@ import base64
 
 class ImageHandler:
     """이미지 다운로드 및 처리 클래스"""
-    
-    def __init__(self, temp_dir='temp_images'):
+
+    def __init__(self, temp_dir=None):
         """
         초기화
-        
+
         Args:
-            temp_dir: 임시 이미지 저장 폴더 경로
+            temp_dir: 임시 이미지 저장 폴더 경로 (None이면 프로세스 ID 기반 자동 생성)
         """
-        self.temp_dir = temp_dir
-        
+        if temp_dir is None:
+            # 프로세스 ID 기반으로 폴더 분리 (다중 프로그램 실행 시 충돌 방지)
+            import os
+            process_id = os.getpid()
+            self.temp_dir = f'temp_images_{process_id}'
+        else:
+            self.temp_dir = temp_dir
+
         # temp_images 폴더 생성
         if not os.path.exists(self.temp_dir):
             os.makedirs(self.temp_dir)
