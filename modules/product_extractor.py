@@ -35,7 +35,6 @@ class ProductExtractor:
                 'price': 가격,
                 'description': 텍스트 설명,
                 'images': 대표 이미지 URL 리스트,
-                'detail_images': 상세 설명 이미지 URL 리스트, ⭐ 신규
                 'link': 원본 URL
             }
         """
@@ -62,21 +61,18 @@ class ProductExtractor:
             price = self._extract_price()
             description = self._extract_description()
             images = self._extract_images()
-            detail_images = self._extract_detail_images()  # ⭐ 신규
             
             print(f"\n✅ 제품 정보 추출 완료:")
             print(f"   - 제품명: {title[:50]}...")
             print(f"   - 가격: {price}")
             print(f"   - 텍스트 설명: {len(description)}자")
             print(f"   - 대표 이미지: {len(images)}개")
-            print(f"   - 상세 이미지: {len(detail_images)}개")  # ⭐ 신규
             
             return {
                 'title': title,
                 'price': price,
                 'description': description,
                 'images': images,
-                'detail_images': detail_images,  # ⭐ 신규
                 'link': shopping_url
             }
             
@@ -252,81 +248,4 @@ class ProductExtractor:
             
         except Exception as e:
             print(f"   ⚠️ 이미지 추출 오류: {e}")
-            return []
-    
-    def _extract_detail_images(self):
-        """
-        상세 설명 이미지 URL 추출 ⭐ 신규 기능
-        Vision API로 분석할 이미지들
-        
-        Returns:
-            list: 상세 설명 이미지 URL 리스트
-        """
-        print("   📸 상세 설명 이미지 수집 중...")
-        detail_image_urls = []
-        
-        try:
-            # 상세 설명 영역의 이미지들 찾기
-            selectors = [
-                'div.se-main-container img',  # 상세정보 메인 영역의 이미지
-                'div.se-viewer img',           # 백업
-                'div.nKuwJ img',               # 추가 셀렉터
-                'div._3cWR_0Clkt img',         # 추가 셀렉터
-            ]
-            
-            collected_urls = set()  # 중복 제거용
-            
-            for selector in selectors:
-                try:
-                    images = self.driver.find_elements(By.CSS_SELECTOR, selector)
-                    
-                    for img in images:
-                        try:
-                            src = img.get_attribute('src')
-                            
-                            # 유효한 이미지 URL만 수집
-                            if src and src.startswith('http'):
-                                # 작은 아이콘 제외 (width/height 체크)
-                                width = img.get_attribute('width')
-                                height = img.get_attribute('height')
-                                
-                                # 너무 작은 이미지는 아이콘일 가능성이 높으므로 제외
-                                if width and height:
-                                    try:
-                                        w = int(width.replace('px', ''))
-                                        h = int(height.replace('px', ''))
-                                        if w < 100 or h < 100:
-                                            continue
-                                    except:
-                                        pass
-                                
-                                # 고화질 변환
-                                if '?type=' in src:
-                                    src = src.split('?type=')[0] + '?type=f640'
-                                
-                                collected_urls.add(src)
-                                
-                        except Exception as e:
-                            continue
-                    
-                    # 충분히 수집했으면 중단
-                    if len(collected_urls) >= 15:
-                        break
-                        
-                except Exception as e:
-                    print(f"      ⚠️ {selector} 에서 이미지 추출 실패: {e}")
-                    continue
-            
-            detail_image_urls = list(collected_urls)
-            print(f"   ✅ 총 {len(detail_image_urls)}개 상세 이미지 추출 완료")
-            
-            # 처음 10개만 반환 (토큰 절약)
-            if len(detail_image_urls) > 10:
-                print(f"   ℹ️  토큰 절약을 위해 처음 10개만 사용")
-                return detail_image_urls[:10]
-            
-            return detail_image_urls
-            
-        except Exception as e:
-            print(f"   ⚠️ 상세 이미지 추출 오류: {e}")
             return []

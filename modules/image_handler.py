@@ -66,50 +66,6 @@ class ImageHandler:
         
         print(f"✅ {len(downloaded_files)}개 상품 이미지 다운로드 완료")
         return downloaded_files
-    
-    def download_detail_images(self, detail_image_urls, max_images=10):
-        """
-        상품 상세 설명 이미지들 다운로드
-        (Vision API로 분석할 이미지들)
-        
-        Args:
-            detail_image_urls: 상세 설명 이미지 URL 리스트
-            max_images: 최대 다운로드 개수 (토큰 절약)
-            
-        Returns:
-            list: 다운로드된 파일 경로 리스트
-        """
-        print(f"\n💾 상세 설명 이미지 다운로드 중...")
-        print(f"   📊 다운로드할 이미지: {min(len(detail_image_urls), max_images)}개")
-        
-        if not detail_image_urls:
-            print("   ⚠️ 상세 이미지 URL이 없습니다!")
-            return []
-        
-        downloaded_files = []
-        
-        # 최대 개수만큼만 다운로드
-        for idx, url in enumerate(detail_image_urls[:max_images]):
-            try:
-                response = requests.get(url, timeout=10)
-                if response.status_code == 200:
-                    filename = f"detail_{idx+1}.jpg"
-                    filepath = os.path.join(self.temp_dir, filename)
-                    
-                    with open(filepath, 'wb') as f:
-                        f.write(response.content)
-                    
-                    abs_path = os.path.abspath(filepath)
-                    downloaded_files.append(abs_path)
-                    print(f"   ✅ {filename} 다운로드 완료")
-                    
-            except Exception as e:
-                print(f"   ⚠️ 상세 이미지 {idx+1} 다운로드 실패: {e}")
-                continue
-        
-        print(f"✅ {len(downloaded_files)}개 상세 이미지 다운로드 완료")
-        return downloaded_files
-    
     def encode_image_to_base64(self, image_path):
         """
         이미지 파일을 base64로 인코딩
