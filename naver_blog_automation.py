@@ -1048,14 +1048,15 @@ class NaverBlogAutomation:
         return downloaded_files
     
     def generate_ai_content(self, product_info, image_files=None):
-        """Gemini AI로 블로그 글 생성 (Vision API 사용)"""
+        """Gemini AI로 블로그 글 생성 (Vision API 사용 + 히스토리 학습)"""
         print(f"\n🤖 AI 글 생성 중...")
-        
+
         try:
             import google.generativeai as genai
-            
+            from modules.content_history import ContentHistoryManager
+
             genai.configure(api_key=self.gemini_api_key)
-            
+
             # 모델 우선순위: gemini-2.5-flash → Gemini 2.5 Flash-Lite
             try:
                 model = genai.GenerativeModel('gemini-2.5-pro')
@@ -1063,11 +1064,22 @@ class NaverBlogAutomation:
             except:
                 model = genai.GenerativeModel('gemini-2.5-flash')
                 print("   🤖 모델: gemini-2.5-flash (백업)")
-            
+
             title = product_info['title']
             price = product_info['price']
             description = product_info['description']
             image_count = len(product_info['images'])
+
+            # 히스토리 관리자 초기화 및 차별화 전략 가져오기
+            history_manager = ContentHistoryManager()
+            differentiation = history_manager.suggest_differentiation_strategy(title)
+
+            print(f"   📚 카테고리: {differentiation['category']}")
+            if differentiation['recent_count'] > 0:
+                print(f"   📊 최근 {differentiation['recent_count']}개 리뷰 분석 완료")
+                print(f"   💡 추천 각도: {', '.join(differentiation['suggested_approaches'][:2])}")
+            else:
+                print(f"   📊 {differentiation['category']} 첫 리뷰 작성")
 
             # 스타일 프로파일(무작위 각도) 생성
             style_angles = [
@@ -1217,6 +1229,22 @@ class NaverBlogAutomation:
 이미지에서 확인한 내용을 바탕으로 더 구체적이고 생생한 후기를 작성하세요.
 """
 
+            # 차별화 지시 생성
+            differentiation_instruction = f"""
+🎯 차별화 전략 (매우 중요!):
+{differentiation['differentiation_tip']}
+
+최근 사용된 접근 방식: {', '.join(differentiation['recent_approaches']) if differentiation['recent_approaches'] else '없음'}
+이번에 추천하는 접근 방식: {', '.join(differentiation['suggested_approaches'][:2])}
+
+⚠️ 같은 카테고리 제품이라도 매번 다른 각도로 작성해야 합니다!
+- 첫 번째 리뷰: 소재/촉감 중심
+- 두 번째 리뷰: 크기/용량 중심
+- 세 번째 리뷰: 사용 편의성 중심
+- 네 번째 리뷰: 디자인/색상 중심
+이런 식으로 계속 다양하게 접근하세요.
+"""
+
             prompt = f"""
 당신은 네이버 블로그 전문 리뷰어입니다. 아래 제품 후기를 작성하세요.
 
@@ -1225,6 +1253,8 @@ class NaverBlogAutomation:
 제품 설명: {description}
 
 {image_analysis_instruction}
+
+{differentiation_instruction}
 
 작성 관점(랜덤으로 선택됨): {chosen_angle}
 
@@ -1368,10 +1398,17 @@ JSON 형식 예시:
             ai_content = self._soft_avoid_phrases(ai_content)
             
             print(f"✅ AI 글 생성 완료 ({len(ai_content)}자)")
-            
+
             # 태그 생성
             tags = self._generate_tags(title, description)
-            
+
+            # 히스토리 저장 (사용된 접근 각도 포함)
+            try:
+                suggested_approach = differentiation['suggested_approaches'][0] if differentiation['suggested_approaches'] else None
+                history_manager.save_history(title, ai_content, suggested_approach)
+            except Exception as e:
+                print(f"   ⚠️ 히스토리 저장 실패 (무시): {e}")
+
             return {
                 'content': ai_content,
                 'tags': tags,
