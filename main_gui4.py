@@ -593,6 +593,8 @@ class MainWindow(QMainWindow):
     def __init__(self, user_info=None):
         super().__init__()
         self.config = ConfigManager.load()
+        # 프로필 이름을 현재 선택된 프로필로 강제 업데이트
+        self.config['chrome_profile_name'] = ConfigManager.current_profile
         self.thread = None
         self.user_info = user_info
         self.auth_manager = FirebaseAuthManager()
