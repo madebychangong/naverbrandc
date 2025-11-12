@@ -38,13 +38,17 @@ class AutomationThread(QThread):
     progress = pyqtSignal(str)
     finished = pyqtSignal(bool, str)
 
-    def __init__(self, config, shopping_url):
+    def __init__(self, config, shopping_urls):
         super().__init__()
         self.config = config
-        self.shopping_url = shopping_url
+        self.shopping_urls = shopping_urls  # 여러 URL을 리스트로 받음
         self.bot = None
 
     def run(self):
+        total_urls = len(self.shopping_urls)
+        success_count = 0
+        fail_count = 0
+
         try:
             self.progress.emit("🌐 브라우저 시작 중...")
             self.bot = NaverBlogAutomation(
@@ -62,33 +66,55 @@ class AutomationThread(QThread):
                 return
             self.progress.emit("✅ 로그인 완료\n")
 
-            self.progress.emit("📦 제품 정보 추출 중...")
-            product_info = self.bot.extract_product_info(self.shopping_url)
-            if not product_info:
-                self.finished.emit(False, "제품 정보 추출 실패")
-                return
-            self.progress.emit(f"✅ 제품명: {product_info['title'][:50]}...\n")
+            # 여러 URL을 순차적으로 처리
+            for idx, shopping_url in enumerate(self.shopping_urls, 1):
+                try:
+                    self.progress.emit(f"\n{'='*60}")
+                    self.progress.emit(f"📌 [{idx}/{total_urls}] 처리 중: {shopping_url}")
+                    self.progress.emit(f"{'='*60}\n")
 
-            self.progress.emit("💾 이미지 다운로드 중...")
-            image_files = self.bot.download_images(product_info['images'])
-            if not image_files:
-                self.finished.emit(False, "이미지 다운로드 실패 - 최소 1개")
-                return
-            self.progress.emit(f"✅ {len(image_files)}개 이미지 다운로드 완료\n")
+                    self.progress.emit("📦 제품 정보 추출 중...")
+                    product_info = self.bot.extract_product_info(shopping_url)
+                    if not product_info:
+                        self.progress.emit(f"❌ [{idx}/{total_urls}] 제품 정보 추출 실패\n")
+                        fail_count += 1
+                        continue
+                    self.progress.emit(f"✅ 제품명: {product_info['title'][:50]}...\n")
 
-            self.progress.emit("🤖 AI 글 생성 중...")
-            ai_result = self.bot.generate_ai_content(product_info)
-            if not ai_result:
-                self.finished.emit(False, "AI 글 생성 실패")
-                return
-            self.progress.emit(f"✅ AI 글 생성 완료 ({len(ai_result['content'])}자)\n")
-            self.progress.emit(f"✅ 태그 {len(ai_result['tags'])}개 생성\n")
+                    self.progress.emit("💾 이미지 다운로드 중...")
+                    image_files = self.bot.download_images(product_info['images'])
+                    if not image_files:
+                        self.progress.emit(f"❌ [{idx}/{total_urls}] 이미지 다운로드 실패\n")
+                        fail_count += 1
+                        continue
+                    self.progress.emit(f"✅ {len(image_files)}개 이미지 다운로드 완료\n")
 
-            self.progress.emit("📝 블로그 글 작성 및 발행 중...")
-            if self.bot.write_blog_post(product_info['title'], ai_result, image_files, self.shopping_url):
-                self.finished.emit(True, "블로그 글 발행 완료! 🎉")
-            else:
-                self.finished.emit(False, "블로그 글 작성 실패")
+                    self.progress.emit("🤖 AI 글 생성 중 (이미지 분석 포함)...")
+                    ai_result = self.bot.generate_ai_content(product_info, image_files)
+                    if not ai_result:
+                        self.progress.emit(f"❌ [{idx}/{total_urls}] AI 글 생성 실패\n")
+                        fail_count += 1
+                        continue
+                    self.progress.emit(f"✅ AI 글 생성 완료 ({len(ai_result['content'])}자)\n")
+                    self.progress.emit(f"✅ 태그 {len(ai_result['tags'])}개 생성\n")
+
+                    self.progress.emit("📝 블로그 글 작성 및 발행 중...")
+                    if self.bot.write_blog_post(product_info['title'], ai_result, image_files, shopping_url):
+                        self.progress.emit(f"✅ [{idx}/{total_urls}] 블로그 글 발행 완료! 🎉\n")
+                        success_count += 1
+                    else:
+                        self.progress.emit(f"❌ [{idx}/{total_urls}] 블로그 글 작성 실패\n")
+                        fail_count += 1
+
+                except Exception as e:
+                    self.progress.emit(f"❌ [{idx}/{total_urls}] 오류 발생: {str(e)}\n")
+                    fail_count += 1
+                    continue
+
+            # 최종 결과 메시지
+            result_msg = f"작업 완료! 성공: {success_count}개, 실패: {fail_count}개 (총 {total_urls}개)"
+            self.finished.emit(success_count > 0, result_msg)
+
         except Exception as e:
             self.finished.emit(False, f"오류 발생: {str(e)}")
         finally:
@@ -637,15 +663,31 @@ class MainWindow(QMainWindow):
         page = QWidget(); layout = QVBoxLayout(page)
         layout.setContentsMargins(0, 0, 0, 0); layout.setSpacing(12)
 
-        # URL 입력
-        url_group, url_lay = self.build_group("📦 쇼핑 URL")
+        # URL 입력 (여러 줄 TextEdit으로 변경)
+        url_group, url_lay = self.build_group("📦 쇼핑 URL (여러 개 입력 가능)")
         # 안내 라벨
-        helper = QLabel("발급받은 브랜드커넥트 URL(naver.me)을 붙여넣으세요.")
+        helper = QLabel("발급받은 브랜드커넥트 URL을 한 줄에 하나씩 입력하세요. (최대 300개)")
         helper.setStyleSheet(f"color:{Colors.TEXT_WEAK}; font-size:12px;")
         url_lay.addWidget(helper)
 
-        self.url_input = LineEdit("예: https://naver.me/xxxxxx")
-        self.url_input.setToolTip("발급받은 브랜드커넥트 URL")
+        # QTextEdit으로 변경 (여러 줄 입력 가능)
+        self.url_input = QTextEdit()
+        self.url_input.setPlaceholderText("예:\nhttps://naver.me/xxxxxx\nhttps://naver.me/yyyyyy\nhttps://naver.me/zzzzzz")
+        self.url_input.setFixedHeight(150)  # 높이 설정
+        self.url_input.setStyleSheet(f"""
+            QTextEdit {{
+                background: #F9FAFB;
+                border: 1px solid #E5E7EB;
+                border-radius: 12px;
+                padding: 12px;
+                color: {Colors.TEXT};
+                font-family: monospace;
+            }}
+            QTextEdit:focus {{
+                background: {Colors.SURFACE};
+                border: 2px solid {Colors.PRIMARY};
+            }}
+        """)
         url_lay.addWidget(self.url_input)
         layout.addWidget(url_group)
 
@@ -714,25 +756,63 @@ class MainWindow(QMainWindow):
         self.btn_settings.setChecked(index == 1)
 
     def start_automation(self):
-        url = self.url_input.text().strip()
-        if not url or url.startswith("https://naver.me/") is False:
-            QMessageBox.warning(self, "입력 오류", "유효한 쇼핑 URL을 입력하세요.")
+        # QTextEdit에서 텍스트를 가져와서 줄 단위로 분리
+        urls_text = self.url_input.toPlainText().strip()
+
+        if not urls_text:
+            QMessageBox.warning(self, "입력 오류", "최소 1개 이상의 URL을 입력하세요.")
             return
+
+        # 줄 단위로 분리하고 빈 줄 제거
+        urls = [line.strip() for line in urls_text.split('\n') if line.strip()]
+
+        # URL 유효성 검사
+        invalid_urls = [url for url in urls if not url.startswith("https://naver.me/")]
+        if invalid_urls:
+            QMessageBox.warning(
+                self,
+                "입력 오류",
+                f"유효하지 않은 URL이 {len(invalid_urls)}개 있습니다.\n"
+                f"모든 URL은 'https://naver.me/'로 시작해야 합니다.\n\n"
+                f"예시: {invalid_urls[0]}"
+            )
+            return
+
+        # 최대 300개 제한
+        if len(urls) > 300:
+            QMessageBox.warning(
+                self,
+                "입력 오류",
+                f"최대 300개까지만 입력 가능합니다.\n현재 {len(urls)}개가 입력되었습니다."
+            )
+            return
+
         if not all([self.blog_id_input.text().strip(), self.naver_id_input.text().strip(), self.naver_pw_input.text(), self.gemini_key_input.text().strip()]):
             QMessageBox.warning(self, "설정 오류", "설정 정보를 모두 입력하세요.")
             return
-        
+
         # Firebase 사용 제한 체크
         if self.user_info and self.auth_manager.is_enabled():
             email = self.user_info.get('email')
             if not self.auth_manager.check_usage_limit(email):
                 QMessageBox.warning(
-                    self, 
-                    "사용 제한", 
+                    self,
+                    "사용 제한",
                     f"월 사용 제한에 도달했습니다.\n"
                     f"사용 횟수: {self.user_info.get('usage_count', 0)} / {self.user_info.get('usage_limit', 0)}"
                 )
                 return
+
+        # 확인 메시지 표시
+        reply = QMessageBox.question(
+            self,
+            "작업 시작 확인",
+            f"총 {len(urls)}개의 URL을 처리합니다.\n계속하시겠습니까?",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No
+        )
+
+        if reply != QMessageBox.StandardButton.Yes:
+            return
 
         self.progress_text.clear()
         self.start_btn.setEnabled(False)
@@ -745,7 +825,7 @@ class MainWindow(QMainWindow):
             'naver_pw': self.naver_pw_input.text(),
             'gemini_api_key': self.gemini_key_input.text().strip()
         }
-        self.thread = AutomationThread(cfg, url)
+        self.thread = AutomationThread(cfg, urls)  # 여러 URL을 리스트로 전달
         self.thread.progress.connect(self.update_progress)
         self.thread.finished.connect(self.automation_finished)
         self.thread.start()
@@ -762,12 +842,18 @@ class MainWindow(QMainWindow):
         self.start_btn.setEnabled(True)
         self.stop_btn.setEnabled(False)
         self.url_input.setEnabled(True)
-        
-        # Firebase 사용 횟수 증가
+
+        # Firebase 사용 횟수 증가 (성공한 경우에만)
         if success and self.user_info and self.auth_manager.is_enabled():
-            self.auth_manager.increment_usage(self.user_info.get('email'))
-            self.user_info['usage_count'] = self.user_info.get('usage_count', 0) + 1
-        
+            # 메시지에서 성공 개수 추출 (예: "작업 완료! 성공: 5개, 실패: 0개 (총 5개)")
+            import re
+            match = re.search(r'성공: (\d+)개', message)
+            if match:
+                success_count = int(match.group(1))
+                for _ in range(success_count):
+                    self.auth_manager.increment_usage(self.user_info.get('email'))
+                self.user_info['usage_count'] = self.user_info.get('usage_count', 0) + success_count
+
         if success:
             self.progress_text.append(f"\n✅ {message}")
             QMessageBox.information(self, "완료", message)

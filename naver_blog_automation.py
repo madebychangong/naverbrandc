@@ -1047,8 +1047,8 @@ class NaverBlogAutomation:
         print(f"✅ {len(downloaded_files)}개 이미지 다운로드 완료")
         return downloaded_files
     
-    def generate_ai_content(self, product_info):
-        """Gemini AI로 블로그 글 생성"""
+    def generate_ai_content(self, product_info, image_files=None):
+        """Gemini AI로 블로그 글 생성 (Vision API 사용)"""
         print(f"\n🤖 AI 글 생성 중...")
         
         try:
@@ -1185,13 +1185,46 @@ class NaverBlogAutomation:
 
 """
             
-            # 프롬프트 생성 (예시 문장 제거, 금지 문구 명시)
+            # 이미지 로드 (Vision API용)
+            product_images = []
+            if image_files:
+                from PIL import Image
+                print(f"   📸 상품 이미지 {len(image_files)}개 로드 중...")
+                for img_path in image_files[:6]:  # 최대 6개만 사용 (토큰 절약)
+                    try:
+                        img = Image.open(img_path)
+                        product_images.append(img)
+                    except Exception as e:
+                        print(f"      ⚠️ 이미지 로드 실패 ({img_path}): {e}")
+                        continue
+                print(f"   ✅ {len(product_images)}개 이미지 로드 완료")
+
+            # 프롬프트 생성 (Vision API 버전 - 이미지 분석 지침 포함)
+            image_analysis_instruction = ""
+            if product_images:
+                image_analysis_instruction = f"""
+🔍 이미지 분석 지침 (매우 중요!):
+첨부된 {len(product_images)}개의 이미지는 상품 이미지들입니다.
+이 이미지들을 분석하여 아래 정보를 추출하세요:
+
+✅ 포함할 정보:
+- 제품의 실제 외관, 디자인, 색상
+- 제품의 기능, 특징, 스펙 (크기, 무게, 용량, 소재 등)
+- 사용 방법, 활용 팁
+- 제품의 장점, 효과, 성능
+- 구성품, 패키징
+
+이미지에서 확인한 내용을 바탕으로 더 구체적이고 생생한 후기를 작성하세요.
+"""
+
             prompt = f"""
 당신은 네이버 블로그 전문 리뷰어입니다. 아래 제품 후기를 작성하세요.
 
 제품명: {title}
 가격: {price}
 제품 설명: {description}
+
+{image_analysis_instruction}
 
 작성 관점(랜덤으로 선택됨): {chosen_angle}
 
@@ -1295,7 +1328,19 @@ JSON 형식 예시:
 """
             
             gen_config = genai.GenerationConfig(temperature=0.95, top_p=0.9)
-            response = model.generate_content(prompt, generation_config=gen_config)
+
+            # Vision API 호출 (이미지가 있으면 함께 전송)
+            if product_images:
+                print(f"   🤖 Gemini Vision API 호출 중...")
+                print(f"      - 텍스트 정보: {len(description)}자")
+                print(f"      - 이미지 개수: {len(product_images)}개")
+                # 프롬프트 + 이미지들을 함께 전송
+                content_parts = [prompt] + product_images
+                response = model.generate_content(content_parts, generation_config=gen_config)
+            else:
+                print(f"   🤖 Gemini API 호출 중 (텍스트만)...")
+                response = model.generate_content(prompt, generation_config=gen_config)
+
             ai_response = response.text.strip()
             
             # 본문과 JSON 분리
