@@ -511,24 +511,44 @@ class NaverBlogAutomation:
             ActionChains(self.driver).key_down(Keys.CONTROL).send_keys('v').key_up(Keys.CONTROL).perform()
 
     def start_browser(self):
-        """브라우저 시작 (다중 프로세스 지원)"""
+        """브라우저 시작 (다중 프로세스 지원 - 완전한 프로필 격리)"""
         print("🌐 Chrome 브라우저 시작...")
 
         # 프로세스 ID로 프로필 분리 (다중 프로그램 실행 시 충돌 방지)
         import os
-        import tempfile
+        import random
+        import time
         process_id = os.getpid()
 
-        # 프로세스별 사용자 데이터 디렉토리
-        user_data_dir = os.path.join(tempfile.gettempdir(), f'chrome_profile_{process_id}')
+        # 현재 시간 기반 고유 식별자 추가 (동시 실행 시 더욱 안전한 격리)
+        unique_id = f"{process_id}_{int(time.time() * 1000)}"
+
+        # 프로젝트 폴더 내에 chrome_profiles 폴더 생성
+        profiles_base = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'chrome_profiles')
+        if not os.path.exists(profiles_base):
+            os.makedirs(profiles_base)
+
+        # 프로세스별 완전히 독립적인 사용자 데이터 디렉토리
+        user_data_dir = os.path.join(profiles_base, f'profile_{unique_id}')
+
+        print(f"   📁 프로필 경로: {user_data_dir}")
 
         options = uc.ChromeOptions()
         options.add_argument('--disable-blink-features=AutomationControlled')
         options.add_argument('--start-maximized')
         options.add_argument(f'--user-data-dir={user_data_dir}')
 
+        # Chrome 프로필 완전 격리 설정
+        options.add_argument('--no-first-run')
+        options.add_argument('--no-default-browser-check')
+        options.add_argument('--disable-sync')  # Chrome 동기화 비활성화
+        options.add_argument('--disable-extensions')
+        options.add_argument('--disable-plugins-discovery')
+
+        # 각 프로세스마다 독립적인 프로필 디렉토리 사용
+        options.add_argument(f'--profile-directory=Default')
+
         # 포트 충돌 방지를 위해 랜덤 포트 사용
-        import random
         driver_port = random.randint(9000, 9999)
 
         self.driver = uc.Chrome(
@@ -537,7 +557,7 @@ class NaverBlogAutomation:
             driver_executable_path=None,
             port=driver_port
         )
-        print(f"✅ 브라우저 시작 완료 (PID: {process_id}, Port: {driver_port})")
+        print(f"✅ 브라우저 시작 완료 (PID: {process_id}, Port: {driver_port}, 독립 프로필)")
     
     def save_cookies(self):
         """쿠키 저장"""
